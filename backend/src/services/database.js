@@ -8,10 +8,17 @@ let relationshipsDb;
 
 const DATABASES = ['users', 'posts', 'rooms', 'relationships'];
 
+// OSC Default Configuration
+const OSC_DEFAULTS = {
+  COUCHDB_URL: 'https://team2-voicecircledb.apache-couchdb.auto.prod.osaas.io',
+  COUCHDB_USER: 'admin',
+  COUCHDB_PASSWORD: 'voicecircle2026db'
+};
+
 export async function initializeDatabase() {
-  const couchUrl = process.env.COUCHDB_URL;
-  const user = process.env.COUCHDB_USER || 'admin';
-  const password = process.env.COUCHDB_PASSWORD;
+  const couchUrl = process.env.COUCHDB_URL || OSC_DEFAULTS.COUCHDB_URL;
+  const user = process.env.COUCHDB_USER || OSC_DEFAULTS.COUCHDB_USER;
+  const password = process.env.COUCHDB_PASSWORD || OSC_DEFAULTS.COUCHDB_PASSWORD;
 
   // Construct authenticated URL
   const urlObj = new URL(couchUrl);
