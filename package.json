@@ -4,7 +4,7 @@
   "description": "VoiceCircle - Social Audio/Video Platform",
   "scripts": {
     "start": "cd backend && npm start",
-    "postinstall": "cd backend && npm install"
+    "postinstall": "cd backend && npm install && cd ../frontend && npm install && npm run build && mkdir -p ../backend/public && cp -r dist/* ../backend/public/"
   },
   "engines": {
     "node": ">=18.0.0"
