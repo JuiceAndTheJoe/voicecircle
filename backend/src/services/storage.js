@@ -10,7 +10,17 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 let s3Client;
-const BUCKET = process.env.S3_BUCKET || 'voicecircle';
+
+// OSC Default Configuration
+const OSC_DEFAULTS = {
+  S3_ENDPOINT: 'https://team2-vcstorage.minio-minio.auto.prod.osaas.io',
+  S3_ACCESS_KEY: 'admin',
+  S3_SECRET_KEY: 'voicecircle2026storage',
+  S3_REGION: 'us-east-1',
+  S3_BUCKET: 'voicecircle'
+};
+
+const BUCKET = process.env.S3_BUCKET || OSC_DEFAULTS.S3_BUCKET;
 
 // Prefixes for different media types
 export const PREFIXES = {
@@ -20,10 +30,10 @@ export const PREFIXES = {
 };
 
 export async function initializeStorage() {
-  const endpoint = process.env.S3_ENDPOINT;
-  const accessKey = process.env.S3_ACCESS_KEY;
-  const secretKey = process.env.S3_SECRET_KEY;
-  const region = process.env.S3_REGION || 'us-east-1';
+  const endpoint = process.env.S3_ENDPOINT || OSC_DEFAULTS.S3_ENDPOINT;
+  const accessKey = process.env.S3_ACCESS_KEY || OSC_DEFAULTS.S3_ACCESS_KEY;
+  const secretKey = process.env.S3_SECRET_KEY || OSC_DEFAULTS.S3_SECRET_KEY;
+  const region = process.env.S3_REGION || OSC_DEFAULTS.S3_REGION;
 
   s3Client = new S3Client({
     endpoint,
@@ -121,7 +131,7 @@ export async function getSignedDownloadUrl(key, expiresIn = 3600) {
 }
 
 export function getPublicUrl(key) {
-  const endpoint = process.env.S3_ENDPOINT;
+  const endpoint = process.env.S3_ENDPOINT || OSC_DEFAULTS.S3_ENDPOINT;
   return `${endpoint}/${BUCKET}/${key}`;
 }
 
