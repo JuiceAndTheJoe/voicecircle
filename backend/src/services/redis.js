@@ -2,6 +2,11 @@ import Redis from 'ioredis';
 
 let redis;
 
+// OSC Default Configuration
+const OSC_DEFAULTS = {
+  REDIS_URL: 'redis://default@172.232.131.169:10522'
+};
+
 // Key prefixes
 const KEYS = {
   USER_ONLINE: 'user:online:',
@@ -18,7 +23,7 @@ const TTL = {
 };
 
 export async function initializeRedis() {
-  const redisUrl = process.env.REDIS_URL;
+  const redisUrl = process.env.REDIS_URL || OSC_DEFAULTS.REDIS_URL;
 
   if (redisUrl) {
     redis = new Redis(redisUrl, {
