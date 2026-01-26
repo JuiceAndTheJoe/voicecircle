@@ -55,7 +55,7 @@ export const updateProfileRules = [
     .isLength({ max: 500 })
     .withMessage('Bio must be under 500 characters'),
   body('avatarUrl')
-    .optional()
+    .optional({ values: 'falsy' })
     .isURL()
     .withMessage('Invalid avatar URL')
 ];
@@ -71,7 +71,7 @@ export const createPostRules = [
     .isLength({ max: 280 })
     .withMessage('Content must be under 280 characters'),
   body('mediaUrl')
-    .optional()
+    .optional({ values: 'falsy' })
     .isURL()
     .withMessage('Invalid media URL')
 ];
