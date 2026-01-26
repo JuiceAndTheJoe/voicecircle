@@ -118,17 +118,34 @@ export const uploadApi = {
   uploadFile: async (file, type = 'audio') => {
     const formData = new FormData();
     formData.append('file', file);
-    formData.append('type', type);
+
+    // Map type to correct endpoint
+    let endpoint;
+    switch (type) {
+      case 'audio':
+      case 'voice':
+        endpoint = '/upload/voice';
+        break;
+      case 'video':
+        endpoint = '/upload/video';
+        break;
+      case 'avatar':
+      case 'image':
+        endpoint = '/upload/avatar';
+        break;
+      default:
+        endpoint = '/upload/voice';
+    }
 
     const token = getAuthToken();
-    const response = await fetch(`${API_BASE}/upload`, {
+    const response = await fetch(`${API_BASE}${endpoint}`, {
       method: 'POST',
       headers: token ? { 'Authorization': `Bearer ${token}` } : {},
       body: formData,
     });
 
     if (!response.ok) {
-      const data = await response.json();
+      const data = await response.json().catch(() => ({ error: 'Upload failed' }));
       throw new ApiError(data?.error || 'Upload failed', response.status, data);
     }
 
