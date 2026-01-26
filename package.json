@@ -1,11 +1,10 @@
 {
-  "name": "voicecircle-monorepo",
+  "name": "voicecircle",
   "version": "1.0.0",
-  "private": true,
-  "type": "module",
+  "description": "VoiceCircle - Social Audio/Video Platform",
   "scripts": {
-    "postinstall": "npm --prefix backend install && npm --prefix frontend install && npm --prefix frontend run build",
-    "start": "npm --prefix backend start"
+    "start": "cd backend && npm start",
+    "postinstall": "cd backend && npm install"
   },
   "engines": {
     "node": ">=18.0.0"
