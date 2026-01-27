@@ -85,8 +85,8 @@ export async function uploadVoiceMessage(postId, buffer, contentType) {
   // Upload the file
   await uploadFile(key, buffer, contentType);
 
-  // Return signed URL for secure access (expires in 7 days)
-  return getSignedDownloadUrl(key, 7 * 24 * 60 * 60);
+  // Return public URL for voice messages (they're user content)
+  return getPublicUrl(key);
 }
 
 export async function uploadVideoClip(postId, buffer, contentType) {

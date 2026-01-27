@@ -33,7 +33,18 @@ export function attachAudioPlayerEvents(container) {
 
     // Update duration when metadata loads
     audio.addEventListener('loadedmetadata', () => {
-      timeDisplay.textContent = formatDuration(audio.duration);
+      const duration = audio.duration;
+      if (isFinite(duration) && duration > 0) {
+        timeDisplay.textContent = formatDuration(duration);
+      } else {
+        timeDisplay.textContent = '0:00';
+      }
+    });
+
+    // Handle audio loading errors
+    audio.addEventListener('error', (e) => {
+      timeDisplay.textContent = '0:00';
+      console.warn('Failed to load audio:', src);
     });
 
     // Play/pause toggle
