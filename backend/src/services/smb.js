@@ -1,10 +1,18 @@
 // Symphony Media Bridge Service
 // Handles WebRTC room management via SMB + WHIP/WHEP gateways
 
-const SMB_URL = process.env.SMB_URL;
-const SMB_API_KEY = process.env.SMB_API_KEY;
-const WHIP_URL = process.env.WHIP_URL;
-const WHEP_URL = process.env.WHEP_URL;
+// OSC Default Configuration
+const OSC_DEFAULTS = {
+  SMB_URL: 'https://team2-voicecirclesmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io',
+  SMB_API_KEY: 'voicecircle-api-key-2024',
+  WHIP_URL: 'https://team2-voicecirclewhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io',
+  WHEP_URL: 'https://team2-voicecirclewhep.eyevinn-wrtc-egress.auto.prod.osaas.io'
+};
+
+const SMB_URL = process.env.SMB_URL || OSC_DEFAULTS.SMB_URL;
+const SMB_API_KEY = process.env.SMB_API_KEY || OSC_DEFAULTS.SMB_API_KEY;
+const WHIP_URL = process.env.WHIP_URL || OSC_DEFAULTS.WHIP_URL;
+const WHEP_URL = process.env.WHEP_URL || OSC_DEFAULTS.WHEP_URL;
 
 // Create a new conference/room in SMB
 export async function createConference(conferenceId) {

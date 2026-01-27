@@ -6,8 +6,6 @@ let postsDb;
 let roomsDb;
 let relationshipsDb;
 
-const DATABASES = ['users', 'posts', 'rooms', 'relationships'];
-
 // OSC Default Configuration
 const OSC_DEFAULTS = {
   COUCHDB_URL: 'https://team2-voicecircledb.apache-couchdb.auto.prod.osaas.io',
@@ -15,15 +13,19 @@ const OSC_DEFAULTS = {
   COUCHDB_PASSWORD: 'voicecircle2026db'
 };
 
+const DATABASES = ['users', 'posts', 'rooms', 'relationships'];
+
 export async function initializeDatabase() {
   const couchUrl = process.env.COUCHDB_URL || OSC_DEFAULTS.COUCHDB_URL;
-  const user = process.env.COUCHDB_USER || OSC_DEFAULTS.COUCHDB_USER;
-  const password = process.env.COUCHDB_PASSWORD || OSC_DEFAULTS.COUCHDB_PASSWORD;
-
-  // Construct authenticated URL
   const urlObj = new URL(couchUrl);
-  urlObj.username = user;
-  urlObj.password = password;
+
+  // Only inject credentials if the URL doesn't already contain them
+  if (!urlObj.username) {
+    urlObj.username = process.env.COUCHDB_USER || OSC_DEFAULTS.COUCHDB_USER;
+  }
+  if (!urlObj.password) {
+    urlObj.password = process.env.COUCHDB_PASSWORD || OSC_DEFAULTS.COUCHDB_PASSWORD;
+  }
 
   nano = Nano(urlObj.toString());
 

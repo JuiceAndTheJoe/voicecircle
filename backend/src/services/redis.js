@@ -4,7 +4,7 @@ let redis;
 
 // OSC Default Configuration
 const OSC_DEFAULTS = {
-  REDIS_URL: 'redis://default@172.232.131.169:10522'
+  REDIS_URL: 'redis://172.232.131.169:10522'
 };
 
 // Key prefixes
