@@ -1,18 +1,18 @@
 // Comments modal component
 
-import { Modal, openModal } from '../common/Modal.js';
-import { Avatar } from '../common/Avatar.js';
-import { AudioPlayer } from '../posts/AudioPlayer.js';
-import { icon } from '../../utils/icons.js';
-import { formatRelativeTime } from '../../utils/time.js';
-import { postsApi } from '../../services/api.js';
-import { authState } from '../../services/auth.js';
-import { showError, showSuccess } from '../common/Toast.js';
+import { Modal, openModal } from "../common/Modal.js";
+import { Avatar } from "../common/Avatar.js";
+import { AudioPlayer } from "../posts/AudioPlayer.js";
+import { icon } from "../../utils/icons.js";
+import { formatRelativeTime } from "../../utils/time.js";
+import { postsApi } from "../../services/api.js";
+import { authState } from "../../services/auth.js";
+import { showError, showSuccess } from "../common/Toast.js";
 
 export function openCommentsModal(postId) {
   // Create modal content
   const modalHtml = Modal({
-    title: 'Comments',
+    title: "Comments",
     content: `
       <div id="comments-container">
         <div class="loading-comments">
@@ -21,10 +21,10 @@ export function openCommentsModal(postId) {
         </div>
       </div>
     `,
-    size: 'large',
+    size: "large",
     onClose: () => {
       // Cleanup
-    }
+    },
   });
 
   openModal(modalHtml, () => {
@@ -37,7 +37,7 @@ export function openCommentsModal(postId) {
 
 async function loadComments(postId) {
   try {
-    const container = document.getElementById('comments-container');
+    const container = document.getElementById("comments-container");
     if (!container) return;
 
     // Get post details
@@ -52,7 +52,7 @@ async function loadComments(postId) {
       </div>
       <div class="comments-section">
         <div class="comments-list" id="comments-list">
-          ${comments.length > 0 ? comments.map(renderComment).join('') : '<p class="no-comments">No comments yet. Be the first!</p>'}
+          ${comments.length > 0 ? comments.map(renderComment).join("") : '<p class="no-comments">No comments yet. Be the first!</p>'}
         </div>
         ${authState.isAuthenticated ? renderCommentForm(postId) : '<p class="login-prompt">Please log in to comment.</p>'}
       </div>
@@ -61,10 +61,11 @@ async function loadComments(postId) {
     // Attach event listeners
     attachCommentEvents(postId);
   } catch (error) {
-    console.error('Failed to load comments:', error);
-    const container = document.getElementById('comments-container');
+    console.error("Failed to load comments:", error);
+    const container = document.getElementById("comments-container");
     if (container) {
-      container.innerHTML = '<p class="error">Failed to load comments. Please try again.</p>';
+      container.innerHTML =
+        '<p class="error">Failed to load comments. Please try again.</p>';
     }
   }
 }
@@ -72,22 +73,23 @@ async function loadComments(postId) {
 function renderPost(post) {
   const { _id, author, content, type, mediaUrl, createdAt } = post;
 
-  const mediaContent = type === 'voice' && mediaUrl
-    ? AudioPlayer({ src: mediaUrl, postId: _id })
-    : '';
+  const mediaContent =
+    type === "voice" && mediaUrl
+      ? AudioPlayer({ src: mediaUrl, postId: _id })
+      : "";
 
   return `
     <div class="post-card modal-post">
       <div class="post-header">
         ${Avatar({ user: author, clickable: false })}
         <div class="post-author">
-          <span class="post-author-name">${author?.displayName || author?.username || 'Unknown'}</span>
-          <span class="post-author-username">@${author?.username || 'unknown'}</span>
+          <span class="post-author-name">${author?.displayName || author?.username || "Unknown"}</span>
+          <span class="post-author-username">@${author?.username || "unknown"}</span>
         </div>
         <span class="post-time">${formatRelativeTime(createdAt)}</span>
       </div>
-      ${content ? `<div class="post-content">${escapeHtml(content)}</div>` : ''}
-      ${mediaContent ? `<div class="post-media">${mediaContent}</div>` : ''}
+      ${content ? `<div class="post-content">${escapeHtml(content)}</div>` : ""}
+      ${mediaContent ? `<div class="post-media">${mediaContent}</div>` : ""}
     </div>
   `;
 }
@@ -123,7 +125,7 @@ function renderCommentForm(postId) {
             <span id="comment-char-count">0</span>/500
           </span>
           <button class="btn btn-primary btn-sm" id="submit-comment" data-post-id="${postId}">
-            ${icon('send', 16)} Comment
+            ${icon("send", 16)} Comment
           </button>
         </div>
       </div>
@@ -132,46 +134,45 @@ function renderCommentForm(postId) {
 }
 
 function attachCommentEvents(postId) {
-  const commentInput = document.getElementById('comment-input');
-  const charCount = document.getElementById('comment-char-count');
-  const submitBtn = document.getElementById('submit-comment');
+  const commentInput = document.getElementById("comment-input");
+  const charCount = document.getElementById("comment-char-count");
+  const submitBtn = document.getElementById("submit-comment");
 
   if (commentInput && charCount) {
-    commentInput.addEventListener('input', () => {
+    commentInput.addEventListener("input", () => {
       charCount.textContent = commentInput.value.length;
     });
   }
 
   if (submitBtn) {
-    submitBtn.addEventListener('click', async () => {
+    submitBtn.addEventListener("click", async () => {
       const content = commentInput.value.trim();
       if (!content) {
-        showError('Please write something');
+        showError("Please write something");
         return;
       }
 
       try {
         submitBtn.disabled = true;
-        submitBtn.innerHTML = 'Posting...';
+        submitBtn.innerHTML = "Posting...";
 
         await postsApi.addComment(postId, { content });
 
-        showSuccess('Comment added!');
+        showSuccess("Comment added!");
 
         // Reload comments
         await loadComments(postId);
-
       } catch (error) {
-        showError(error.message || 'Failed to add comment');
+        showError(error.message || "Failed to add comment");
         submitBtn.disabled = false;
-        submitBtn.innerHTML = `${icon('send', 16)} Comment`;
+        submitBtn.innerHTML = `${icon("send", 16)} Comment`;
       }
     });
   }
 }
 
 function escapeHtml(text) {
-  const div = document.createElement('div');
+  const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
 }
