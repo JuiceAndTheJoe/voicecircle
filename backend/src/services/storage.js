@@ -81,7 +81,12 @@ export async function uploadVoiceMessage(postId, buffer, contentType) {
   const extension = contentType.includes('webm') ? 'webm' :
                    contentType.includes('ogg') ? 'ogg' : 'mp3';
   const key = `${PREFIXES.VOICE_MESSAGES}${postId}.${extension}`;
-  return uploadFile(key, buffer, contentType);
+
+  // Upload the file
+  await uploadFile(key, buffer, contentType);
+
+  // Return signed URL for secure access (expires in 7 days)
+  return getSignedDownloadUrl(key, 7 * 24 * 60 * 60);
 }
 
 export async function uploadVideoClip(postId, buffer, contentType) {
