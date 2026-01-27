@@ -3,10 +3,10 @@
 
 // OSC Default Configuration
 const OSC_DEFAULTS = {
-  SMB_URL: 'https://team2-voicecirclesmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io',
+  SMB_URL: 'https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io',
   SMB_API_KEY: 'voicecircle-api-key-2024',
-  WHIP_URL: 'https://team2-voicecirclewhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io',
-  WHEP_URL: 'https://team2-voicecirclewhep.eyevinn-wrtc-egress.auto.prod.osaas.io'
+  WHIP_URL: 'https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io',
+  WHEP_URL: 'https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io'
 };
 
 const SMB_URL = process.env.SMB_URL || OSC_DEFAULTS.SMB_URL;
