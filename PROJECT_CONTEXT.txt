@@ -1,0 +1,98 @@
+VoiceCircle - Project Context
+==============================
+
+Type: Full-stack monorepo (Node.js backend + Vanilla JS frontend)
+Platform Target: Eyevinn Open Source Cloud (OSaaS) - *.osaas.io
+
+STRUCTURE
+---------
+voicecircle/
+├── package.json              Root monorepo config
+├── backend/                  Node.js/Express backend
+│   ├── src/
+│   │   ├── index.js          Main server entry (Express, port 3000)
+│   │   ├── routes/           API routes (auth, users, posts, rooms, upload, health)
+│   │   ├── services/         DB, storage, redis, SMB services
+│   │   ├── middleware/       Auth, validation, error handling
+│   │   └── controllers/     (empty - route-based approach)
+│   ├── package.json
+│   ├── .env                  Current config (OSC service URLs)
+│   └── .env.example
+└── frontend/                 Vanilla JS + Vite
+    ├── src/
+    │   ├── App.js            Entry point
+    │   ├── router.js         Client-side router
+    │   ├── pages/            Page components
+    │   ├── components/       UI components (Common, Navigation, Posts, Rooms, Users)
+    │   ├── services/         API client services
+    │   └── styles/           CSS
+    ├── package.json
+    └── vite.config.js        Dev server proxies /api to backend :3000
+
+TECH STACK
+----------
+Backend:  Express 4.18.2, Node >=18
+Database: Apache CouchDB (4 DBs: users, posts, rooms, relationships)
+Cache:    Redis/Valkey (ioredis 5.3.2)
+Storage:  MinIO S3-compatible (AWS SDK)
+WebRTC:   Symphony Media Bridge (WHIP/WHEP via Eyevinn)
+Auth:     JWT (jsonwebtoken 9.0.2), bcryptjs
+Frontend: Vanilla JS, Vite 5.0.0 (no framework)
+
+BUILD & RUN
+-----------
+npm install   -> postinstall: installs backend+frontend deps, builds frontend,
+                 copies dist/* to backend/public/
+npm start     -> cd backend && npm start (node src/index.js)
+Dev:          frontend: npm run dev (Vite :5173), backend: npm run dev (--watch :3000)
+
+Backend serves both API (/api/*) and static frontend from /public with SPA fallback.
+
+OSC SERVICE DEFAULTS (hardcoded in services as fallbacks)
+---------------------------------------------------------
+CouchDB:  https://team2-voicecircledb.apache-couchdb.auto.prod.osaas.io
+          admin / voicecircle2026db
+
+Redis:    redis://172.232.131.169:10522
+
+MinIO S3: https://team2-voicecirclestore.minio-minio.auto.prod.osaas.io
+          voicecircleadmin / VoiceCircle2026!
+
+SMB:      https://team2-voicecirclesmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io
+WHIP:     https://team2-voicecirclewhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io
+WHEP:     https://team2-voicecirclewhep.eyevinn-wrtc-egress.auto.prod.osaas.io
+SMB Key:  voicecircle-api-key-2024
+
+API ROUTES
+----------
+/api/health   Health check
+/api/auth     Login, register
+/api/users    User management
+/api/posts    Audio/video posts
+/api/rooms    Live rooms/conferences
+/api/upload   File upload (Multer)
+
+Rate limit: 100 req / 15 min per IP on /api/*
+
+FEATURES
+--------
+- User auth, profiles, follow system
+- Audio/video post recording & playback
+- Live WebRTC rooms via Symphony Media Bridge
+- Redis-based participant tracking
+- File upload (avatars, voice messages, video) to MinIO
+- Social feed, user search
+
+NO CONTAINERIZATION YET
+-----------------------
+No Dockerfile, no docker-compose, no Kubernetes config.
+Intended for OSC Web Runner deployment (per commit fefdf6e).
+Needs Dockerfile or OSC app config to deploy.
+
+ENV VARS (from .env.example / .env)
+------------------------------------
+PORT, NODE_ENV, FRONTEND_URL, JWT_SECRET
+COUCHDB_URL, COUCHDB_USER, COUCHDB_PASSWORD
+REDIS_URL
+S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION, S3_BUCKET
+SMB_URL, SMB_API_KEY, WHIP_URL, WHEP_URL

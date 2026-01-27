@@ -3,10 +3,10 @@
 
 // OSC Default Configuration
 const OSC_DEFAULTS = {
-  SMB_URL: 'https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io',
-  SMB_API_KEY: 'voicecircle-api-key-2024',
-  WHIP_URL: 'https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io',
-  WHEP_URL: 'https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io'
+  SMB_URL: "https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io",
+  SMB_API_KEY: "voicecircle-api-key-2024",
+  WHIP_URL: "https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io",
+  WHEP_URL: "https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io",
 };
 
 const SMB_URL = process.env.SMB_URL || OSC_DEFAULTS.SMB_URL;
@@ -16,31 +16,18 @@ const WHEP_URL = process.env.WHEP_URL || OSC_DEFAULTS.WHEP_URL;
 
 // Create a new conference/room in SMB
 export async function createConference(conferenceId) {
-  const response = await fetch(`${SMB_URL}/conferences/${conferenceId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${SMB_API_KEY}`
-    },
-    body: JSON.stringify({
-      'last-n': 16 // Max number of video streams
-    })
-  });
-
-  if (!response.ok && response.status !== 409) { // 409 = already exists
-    throw new Error(`Failed to create conference: ${response.statusText}`);
-  }
-
+  // Skip conference creation - let it be created automatically on first join
+  console.log(`Skipping SMB conference creation for: ${conferenceId}`);
   return { conferenceId };
 }
 
 // Delete a conference
 export async function deleteConference(conferenceId) {
   const response = await fetch(`${SMB_URL}/conferences/${conferenceId}`, {
-    method: 'DELETE',
+    method: "DELETE",
     headers: {
-      'Authorization': `Bearer ${SMB_API_KEY}`
-    }
+      Authorization: `Bearer ${SMB_API_KEY}`,
+    },
   });
 
   return response.ok;
@@ -49,10 +36,10 @@ export async function deleteConference(conferenceId) {
 // Get conference info
 export async function getConference(conferenceId) {
   const response = await fetch(`${SMB_URL}/conferences/${conferenceId}`, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'Authorization': `Bearer ${SMB_API_KEY}`
-    }
+      Authorization: `Bearer ${SMB_API_KEY}`,
+    },
   });
 
   if (!response.ok) {
@@ -75,25 +62,25 @@ export function getWhepEndpoint(conferenceId, participantId) {
 
 // Get signaling info for a room
 export async function getRoomSignaling(roomId, userId, isPublisher = false) {
-  // Create conference if it doesn't exist
-  await createConference(roomId);
+  // Conference should be created automatically when first participant joins
+  // No need to explicitly create it here
 
   return {
     roomId,
     userId,
     whipEndpoint: isPublisher ? getWhipEndpoint(roomId, userId) : null,
     whepEndpoint: getWhepEndpoint(roomId, userId),
-    smbUrl: SMB_URL
+    smbUrl: SMB_URL,
   };
 }
 
 // List all active conferences
 export async function listConferences() {
   const response = await fetch(`${SMB_URL}/conferences`, {
-    method: 'GET',
+    method: "GET",
     headers: {
-      'Authorization': `Bearer ${SMB_API_KEY}`
-    }
+      Authorization: `Bearer ${SMB_API_KEY}`,
+    },
   });
 
   if (!response.ok) {
@@ -107,10 +94,10 @@ export async function listConferences() {
 export async function checkSmbHealth() {
   try {
     const response = await fetch(`${SMB_URL}/health`, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Authorization': `Bearer ${SMB_API_KEY}`
-      }
+        Authorization: `Bearer ${SMB_API_KEY}`,
+      },
     });
     return response.ok;
   } catch {
@@ -126,5 +113,5 @@ export default {
   getWhepEndpoint,
   getRoomSignaling,
   listConferences,
-  checkSmbHealth
+  checkSmbHealth,
 };
