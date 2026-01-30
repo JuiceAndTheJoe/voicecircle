@@ -74,7 +74,12 @@ export async function uploadFile(key, body, contentType) {
 export async function uploadAvatar(userId, buffer, contentType) {
   const extension = contentType.split("/")[1] || "jpg";
   const key = `${PREFIXES.AVATARS}${userId}.${extension}`;
-  return uploadFile(key, buffer, contentType);
+
+  // Upload the file
+  await uploadFile(key, buffer, contentType);
+
+  // Return signed URL for secure access (expires in 7 days)
+  return getSignedDownloadUrl(key, 7 * 24 * 60 * 60);
 }
 
 export async function uploadVoiceMessage(postId, buffer, contentType) {
