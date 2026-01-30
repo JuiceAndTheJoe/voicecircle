@@ -13,11 +13,14 @@ export function Avatar({ user, size = 'default', showOnline = false, clickable =
     ? '<span class="online-indicator"></span>'
     : '';
 
-  const wrapper = clickable ? 'a' : 'div';
+  const wrapper = clickable ? 'a' : 'span';
 
+  // Wrap in container so online indicator isn't clipped by avatar's overflow:hidden
   return `
-    <${wrapper} ${href} class="avatar ${sizeClass}" style="position: relative">
-      ${avatarContent}
+    <${wrapper} ${href} class="avatar-wrapper">
+      <div class="avatar ${sizeClass}">
+        ${avatarContent}
+      </div>
       ${onlineIndicator}
     </${wrapper}>
   `;

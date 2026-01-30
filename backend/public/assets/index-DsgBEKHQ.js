@@ -3,9 +3,11 @@
           <h3>Something went wrong</h3>
           <p>${s.message}</p>
         </div>
-      `}}function qe(e){document.querySelectorAll(".nav-link").forEach(n=>{var s;const a=((s=n.getAttribute("href"))==null?void 0:s.slice(1))||"/";n.classList.toggle("active",a===e||e.startsWith(a)&&a!=="/")}),document.querySelectorAll(".mobile-nav-item").forEach(n=>{var s;const a=((s=n.getAttribute("href"))==null?void 0:s.slice(1))||"/";n.classList.toggle("active",a===e||e.startsWith(a)&&a!=="/")})}function Re(){Z(),window.addEventListener("hashchange",Z),document.addEventListener("click",e=>{e.target.closest('a[href^="#"]')})}function k({user:e,size:t="default",showOnline:o=!1,clickable:n=!1}){const a=t==="sm"?"avatar-sm":t==="lg"?"avatar-lg":t==="xl"?"avatar-xl":"",s=((e==null?void 0:e.displayName)||(e==null?void 0:e.username)||"?")[0].toUpperCase(),i=n?`href="#/profile/${e==null?void 0:e._id}"`:"",r=e!=null&&e.avatarUrl?`<img src="${e.avatarUrl}" alt="${e.displayName||e.username}">`:s,c=o&&(e!=null&&e.online)?'<span class="online-indicator"></span>':"",d=n?"a":"div";return`
-    <${d} ${i} class="avatar ${a}" style="position: relative">
-      ${r}
+      `}}function qe(e){document.querySelectorAll(".nav-link").forEach(n=>{var s;const a=((s=n.getAttribute("href"))==null?void 0:s.slice(1))||"/";n.classList.toggle("active",a===e||e.startsWith(a)&&a!=="/")}),document.querySelectorAll(".mobile-nav-item").forEach(n=>{var s;const a=((s=n.getAttribute("href"))==null?void 0:s.slice(1))||"/";n.classList.toggle("active",a===e||e.startsWith(a)&&a!=="/")})}function Re(){Z(),window.addEventListener("hashchange",Z),document.addEventListener("click",e=>{e.target.closest('a[href^="#"]')})}function k({user:e,size:t="default",showOnline:o=!1,clickable:n=!1}){const a=t==="sm"?"avatar-sm":t==="lg"?"avatar-lg":t==="xl"?"avatar-xl":"",s=((e==null?void 0:e.displayName)||(e==null?void 0:e.username)||"?")[0].toUpperCase(),i=n?`href="#/profile/${e==null?void 0:e._id}"`:"",r=e!=null&&e.avatarUrl?`<img src="${e.avatarUrl}" alt="${e.displayName||e.username}">`:s,c=o&&(e!=null&&e.online)?'<span class="online-indicator"></span>':"",d=n?"a":"span";return`
+    <${d} ${i} class="avatar-wrapper">
+      <div class="avatar ${a}">
+        ${r}
+      </div>
       ${c}
     </${d}>
   `}function Ne({users:e,max:t=3,size:o="sm"}){const n=e.slice(0,t),a=e.length-t;return`

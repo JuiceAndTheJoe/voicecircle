@@ -310,6 +310,16 @@ textarea.form-input {
 }
 
 /* Avatar */
+.avatar-wrapper {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+a.avatar-wrapper {
+  text-decoration: none;
+}
+
 .avatar {
   width: 40px;
   height: 40px;
