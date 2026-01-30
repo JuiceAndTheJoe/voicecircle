@@ -52,6 +52,7 @@ export function attachPostComposerEvents(container, onSuccess) {
 
   let postType = 'text';
   let audioBlob = null;
+  let audioDuration = 0;
   let cleanupRecorder = null;
 
   // Character count
@@ -68,12 +69,14 @@ export function attachPostComposerEvents(container, onSuccess) {
 
       if (postType === 'voice') {
         voiceSection.style.display = 'block';
-        cleanupRecorder = attachAudioRecorderEvents(voiceSection, (blob) => {
+        cleanupRecorder = attachAudioRecorderEvents(voiceSection, ({ blob, duration }) => {
           audioBlob = blob;
+          audioDuration = duration;
         });
       } else {
         voiceSection.style.display = 'none';
         audioBlob = null;
+        audioDuration = 0;
         if (cleanupRecorder) {
           cleanupRecorder();
           cleanupRecorder = null;
@@ -123,7 +126,8 @@ export function attachPostComposerEvents(container, onSuccess) {
       await postsApi.create({
         type: postType,
         content,
-        mediaUrl
+        mediaUrl,
+        mediaDuration: audioBlob ? audioDuration : null
       });
 
       showSuccess('Post created!');

@@ -16,6 +16,7 @@ export function PostCard(post) {
     content,
     type,
     mediaUrl,
+    mediaDuration,
     likesCount,
     commentsCount,
     isLiked,
@@ -24,7 +25,7 @@ export function PostCard(post) {
 
   const mediaContent =
     type === "voice" && mediaUrl
-      ? AudioPlayer({ src: mediaUrl, postId: _id })
+      ? AudioPlayer({ src: mediaUrl, postId: _id, duration: mediaDuration })
       : type === "video" && mediaUrl
         ? `<video src="${mediaUrl}" controls class="post-video" style="width: 100%; border-radius: 8px;"></video>`
         : "";

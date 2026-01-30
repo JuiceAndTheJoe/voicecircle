@@ -3,16 +3,17 @@
 import { icon } from "../../utils/icons.js";
 import { formatDuration } from "../../utils/time.js";
 
-export function AudioPlayer({ src, postId }) {
+export function AudioPlayer({ src, postId, duration }) {
+  const initialTime = duration ? formatDuration(duration) : "0:00";
   return `
-    <div class="audio-player" data-audio-player="${postId}">
+    <div class="audio-player" data-audio-player="${postId}" data-duration="${duration || 0}">
       <button class="audio-play-btn" data-play-btn="${postId}">
         ${icon("play", 24)}
       </button>
       <div class="audio-waveform" data-waveform="${postId}">
         <div class="audio-progress" style="width: 0%; height: 100%; background: var(--primary);"></div>
       </div>
-      <span class="audio-time" data-time="${postId}">0:00</span>
+      <span class="audio-time" data-time="${postId}">${initialTime}</span>
       <audio src="${src}" data-audio="${postId}" preload="metadata"></audio>
     </div>
   `;
@@ -31,15 +32,25 @@ export function attachAudioPlayerEvents(container) {
 
     if (!playBtn || !audio) return;
 
-    // Update duration when metadata loads
-    audio.addEventListener("loadedmetadata", () => {
+    // Get duration from data attribute (stored when post was created)
+    const storedDuration = parseFloat(player.dataset.duration) || 0;
+    let totalDuration = storedDuration;
+    let isPlaying = false;
+
+    const updateDurationDisplay = () => {
       const duration = audio.duration;
       if (isFinite(duration) && duration > 0) {
-        timeDisplay.textContent = formatDuration(duration);
-      } else {
-        timeDisplay.textContent = "0:00";
+        totalDuration = duration;
+        if (!isPlaying) {
+          timeDisplay.textContent = formatDuration(duration);
+        }
       }
-    });
+    };
+
+    // Update duration when metadata loads (fallback if stored duration unavailable)
+    audio.addEventListener("loadedmetadata", updateDurationDisplay);
+    audio.addEventListener("durationchange", updateDurationDisplay);
+    audio.addEventListener("canplay", updateDurationDisplay);
 
     // Handle audio loading errors
     audio.addEventListener("error", (e) => {
@@ -62,11 +73,17 @@ export function attachAudioPlayerEvents(container) {
           }
         });
 
+        isPlaying = true;
         audio.play();
         playBtn.innerHTML = icon("pause", 24);
       } else {
+        isPlaying = false;
         audio.pause();
         playBtn.innerHTML = icon("play", 24);
+        // Show total duration when paused
+        if (totalDuration > 0) {
+          timeDisplay.textContent = formatDuration(totalDuration);
+        }
       }
     });
 
@@ -79,9 +96,10 @@ export function attachAudioPlayerEvents(container) {
 
     // Reset when ended
     audio.addEventListener("ended", () => {
+      isPlaying = false;
       playBtn.innerHTML = icon("play", 24);
       progress.style.width = "0%";
-      timeDisplay.textContent = formatDuration(audio.duration);
+      timeDisplay.textContent = formatDuration(totalDuration || audio.duration);
     });
 
     // Seek on waveform click

@@ -81,7 +81,7 @@ export function attachAudioRecorderEvents(container, onRecorded) {
       showPreview(recordedBlob);
 
       if (onRecorded) {
-        onRecorded(recordedBlob);
+        onRecorded({ blob: recordedBlob, duration: seconds });
       }
     }
 
@@ -131,7 +131,7 @@ export function attachAudioRecorderEvents(container, onRecorded) {
       recordStatus.textContent = 'Tap to record';
 
       if (onRecorded) {
-        onRecorded(null);
+        onRecorded({ blob: null, duration: 0 });
       }
     });
   }

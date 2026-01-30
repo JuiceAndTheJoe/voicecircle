@@ -73,7 +73,11 @@ export const createPostRules = [
   body('mediaUrl')
     .optional({ values: 'falsy' })
     .isURL()
-    .withMessage('Invalid media URL')
+    .withMessage('Invalid media URL'),
+  body('mediaDuration')
+    .optional({ values: 'falsy' })
+    .isInt({ min: 0, max: 600 })
+    .withMessage('Media duration must be 0-600 seconds')
 ];
 
 // Room validation rules

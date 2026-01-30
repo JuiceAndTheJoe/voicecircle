@@ -141,7 +141,7 @@ router.get('/user/:userId', optionalAuth, paginationRules, validate, async (req,
 // Create post
 router.post('/', authenticate, createPostRules, validate, async (req, res, next) => {
   try {
-    const { type, content, mediaUrl } = req.body;
+    const { type, content, mediaUrl, mediaDuration } = req.body;
 
     // Validate media URL for voice/video posts
     if ((type === 'voice' || type === 'video') && !mediaUrl) {
@@ -154,6 +154,7 @@ router.post('/', authenticate, createPostRules, validate, async (req, res, next)
       type,
       content: content || '',
       mediaUrl: mediaUrl || null,
+      mediaDuration: mediaDuration || null,
       likesCount: 0,
       likedBy: [],
       commentsCount: 0,
