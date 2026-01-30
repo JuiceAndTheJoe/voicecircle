@@ -11,6 +11,7 @@ const OSC_DEFAULTS = {
 const KEYS = {
   USER_ONLINE: 'user:online:',
   ROOM_PARTICIPANTS: 'room:participants:',
+  ROOM_CHANNEL: 'room:channel:',
   ACTIVE_ROOMS: 'active_rooms',
   USER_SESSION: 'user:session:',
   NOTIFICATIONS: 'notifications:'
@@ -129,6 +130,19 @@ export async function clearRoomParticipants(roomId) {
   const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
   await redis.del(key);
   await redis.zrem(KEYS.ACTIVE_ROOMS, roomId);
+  // Also clear the channel ID when room ends
+  await redis.del(`${KEYS.ROOM_CHANNEL}${roomId}`);
+}
+
+// Room channel ID (for WHEP subscribers)
+export async function setRoomChannelId(roomId, channelId) {
+  const key = `${KEYS.ROOM_CHANNEL}${roomId}`;
+  await redis.set(key, channelId);
+}
+
+export async function getRoomChannelId(roomId) {
+  const key = `${KEYS.ROOM_CHANNEL}${roomId}`;
+  return await redis.get(key);
 }
 
 // Active rooms (sorted by participant count)

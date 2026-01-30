@@ -15,6 +15,8 @@ import {
   updateParticipantRole,
   clearRoomParticipants,
   getActiveRooms,
+  setRoomChannelId,
+  getRoomChannelId,
 } from "../services/redis.js";
 import smbService from "../services/smb.js";
 import { authenticate } from "../middleware/auth.js";
@@ -178,6 +180,12 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
       req.userId,
       role === "host" || role === "speaker",
     );
+
+    // Add channel ID if available (for WHEP subscribers)
+    const channelId = await getRoomChannelId(room._id);
+    if (channelId) {
+      signaling.channelId = channelId;
+    }
 
     res.json({
       room,
@@ -371,7 +379,57 @@ router.get("/:id/signaling", authenticate, async (req, res, next) => {
       isSpeaker,
     );
 
+    // Add channel ID if available (for WHEP subscribers)
+    const channelId = await getRoomChannelId(room._id);
+    if (channelId) {
+      signaling.channelId = channelId;
+    }
+
     res.json({ signaling });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Store channel ID for a room (called by publisher after WHIP connect)
+router.post("/:id/channel", authenticate, async (req, res, next) => {
+  try {
+    const room = await getRoomById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    // Only speakers/hosts can set the channel ID
+    const isSpeaker =
+      room.speakers?.includes(req.userId) || room.hostId === req.userId;
+    if (!isSpeaker) {
+      return res.status(403).json({ error: "Only speakers can set channel ID" });
+    }
+
+    const { channelId } = req.body;
+    if (!channelId) {
+      return res.status(400).json({ error: "channelId is required" });
+    }
+
+    await setRoomChannelId(room._id, channelId);
+    console.log(`Channel ID set for room ${room._id}: ${channelId}`);
+
+    res.json({ success: true });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Get channel ID for a room
+router.get("/:id/channel", authenticate, async (req, res, next) => {
+  try {
+    const room = await getRoomById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    const channelId = await getRoomChannelId(room._id);
+    res.json({ channelId });
   } catch (error) {
     next(error);
   }

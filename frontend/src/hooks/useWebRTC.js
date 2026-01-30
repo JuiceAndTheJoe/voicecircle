@@ -16,27 +16,71 @@ export class RoomConnection {
     this.whepResourceUrl = null;
     this.audioElements = new Map(); // Track audio elements for remote streams
     this.apiKey = null; // API key for WHIP/WHEP authentication
+    this.channelId = null; // Channel ID for WHEP (extracted from WHIP response)
+    this.whepBaseUrl = null; // Base URL for WHEP gateway
   }
 
   async connect(signaling) {
+    // Default ICE servers with STUN (TURN would need credentials)
     const iceServers = signaling?.iceServers || [
-      { urls: 'stun:stun.l.google.com:19302' }
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' }
     ];
 
     // Store API key for WHIP/WHEP authentication
     this.apiKey = signaling?.apiKey;
 
-    // If speaker/host, setup publishing via WHIP
+    // Store WHEP base URL for constructing subscriber endpoint
+    this.whepBaseUrl = signaling?.whepBaseUrl;
+
+    // If speaker/host, setup publishing via WHIP first
+    // This creates the channel that subscribers will connect to
     if ((this.role === 'host' || this.role === 'speaker') && signaling?.whipEndpoint) {
       await this.setupPublisher(signaling.whipEndpoint, iceServers);
+
+      // Report channel ID to backend so other participants can subscribe
+      if (this.channelId) {
+        await this.reportChannelId(this.channelId);
+      }
     }
 
     // All participants subscribe via WHEP to receive audio
-    if (signaling?.whepEndpoint) {
-      await this.setupSubscriber(signaling.whepEndpoint, iceServers);
+    // Need to get the channel ID first (either from our own publish or from backend)
+    const channelId = this.channelId || signaling?.channelId;
+    if (channelId && this.whepBaseUrl) {
+      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
+      await this.setupSubscriber(whepEndpoint, iceServers);
+    } else if (signaling?.channelId) {
+      // Fallback: use channelId from signaling if provided
+      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
+      await this.setupSubscriber(whepEndpoint, iceServers);
+    } else {
+      console.log('No channel ID available yet - waiting for host to publish');
     }
 
     return true;
+  }
+
+  async reportChannelId(channelId) {
+    try {
+      const token = localStorage.getItem('voicecircle_token');
+      const response = await fetch(`/api/rooms/${this.roomId}/channel`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ channelId })
+      });
+      if (response.ok) {
+        console.log('Reported channel ID to backend:', channelId);
+      } else {
+        console.warn('Failed to report channel ID:', response.status);
+      }
+    } catch (error) {
+      console.warn('Failed to report channel ID:', error);
+    }
   }
 
   async setupPublisher(whipEndpoint, iceServers) {
@@ -102,8 +146,21 @@ export class RoomConnection {
       throw new Error(`WHIP publish failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
+    // Log all response headers for debugging
+    console.log('WHIP response headers:');
+    response.headers.forEach((value, key) => {
+      console.log(`  ${key}: ${value}`);
+    });
+
     // Store resource URL for later cleanup
     this.whipResourceUrl = response.headers.get('Location') || whipEndpoint;
+    console.log('WHIP resource URL:', this.whipResourceUrl);
+
+    // Extract channel ID from Location header
+    // Format: /api/v2/whip/sfu-broadcaster/{channelId}
+    const locationParts = this.whipResourceUrl.split('/');
+    this.channelId = locationParts[locationParts.length - 1];
+    console.log('Extracted channel ID:', this.channelId);
 
     // Get SDP answer
     const answerSdp = await response.text();
@@ -143,19 +200,11 @@ export class RoomConnection {
   }
 
   async subscribeViaWhep(whepEndpoint) {
-    // For WHEP, we need to add a recvonly transceiver first
-    this.subscriberPc.addTransceiver('audio', { direction: 'recvonly' });
+    // Eyevinn WHEP uses server-side offer pattern:
+    // 1. POST empty body to get server's SDP offer
+    // 2. PATCH our SDP answer to the resource URL
 
-    // Create offer
-    const offer = await this.subscriberPc.createOffer();
-    await this.subscriberPc.setLocalDescription(offer);
-
-    // Wait for ICE gathering
-    await this.waitForIceGathering(this.subscriberPc);
-
-    const completeOffer = this.subscriberPc.localDescription;
-
-    // POST offer to WHEP endpoint
+    // Step 1: POST empty body to get server's offer
     const headers = {
       'Content-Type': 'application/sdp'
     };
@@ -166,7 +215,7 @@ export class RoomConnection {
     const response = await fetch(whepEndpoint, {
       method: 'POST',
       headers,
-      body: completeOffer.sdp
+      body: '' // Empty body - server generates the offer
     });
 
     if (!response.ok) {
@@ -174,17 +223,55 @@ export class RoomConnection {
       throw new Error(`WHEP subscribe failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    // Store resource URL for cleanup
-    this.whepResourceUrl = response.headers.get('Location') || whepEndpoint;
+    // Store resource URL for cleanup and for sending answer
+    this.whepResourceUrl = response.headers.get('Location');
+    console.log('WHEP resource URL:', this.whepResourceUrl);
 
-    // Get SDP answer
-    const answerSdp = await response.text();
-    const answer = new RTCSessionDescription({
-      type: 'answer',
-      sdp: answerSdp
+    // Get SDP offer from server
+    const offerSdp = await response.text();
+    console.log('Received WHEP offer from server');
+
+    // Set server's offer as remote description
+    const offer = new RTCSessionDescription({
+      type: 'offer',
+      sdp: offerSdp
+    });
+    await this.subscriberPc.setRemoteDescription(offer);
+
+    // Create our answer
+    const answer = await this.subscriberPc.createAnswer();
+    await this.subscriberPc.setLocalDescription(answer);
+
+    // Wait for ICE gathering
+    await this.waitForIceGathering(this.subscriberPc);
+
+    const completeAnswer = this.subscriberPc.localDescription;
+
+    // Step 2: PATCH our answer to the resource URL
+    const patchHeaders = {
+      'Content-Type': 'application/sdp'
+    };
+    if (this.apiKey) {
+      patchHeaders['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
+    // Resource URL might be relative, construct full URL
+    const resourceUrl = this.whepResourceUrl.startsWith('/')
+      ? new URL(this.whepResourceUrl, whepEndpoint).href
+      : this.whepResourceUrl;
+
+    const patchResponse = await fetch(resourceUrl, {
+      method: 'PATCH',
+      headers: patchHeaders,
+      body: completeAnswer.sdp
     });
 
-    await this.subscriberPc.setRemoteDescription(answer);
+    if (!patchResponse.ok) {
+      const errorText = await patchResponse.text().catch(() => '');
+      throw new Error(`WHEP answer failed: ${patchResponse.status} ${patchResponse.statusText} - ${errorText}`);
+    }
+
+    console.log('WHEP answer sent successfully');
   }
 
   waitForIceGathering(pc) {

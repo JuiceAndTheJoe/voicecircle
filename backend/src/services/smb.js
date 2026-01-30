@@ -51,9 +51,11 @@ export async function getConference(conferenceId) {
 }
 
 // Generate WHIP endpoint URL for a participant to publish
-// All publishers use the same conference endpoint - uniqueness comes from the resource URL returned
+// The WHIP bridge uses plugin names, not dynamic room IDs
+// "sfu-broadcaster" is the standard plugin for SMB integration
+// TODO: For multi-room support, we may need separate WHIP bridge instances per room
 export function getWhipEndpoint(conferenceId) {
-  return `${WHIP_URL}/api/v2/whip/${conferenceId}`;
+  return `${WHIP_URL}/api/v2/whip/sfu-broadcaster`;
 }
 
 // Generate WHEP endpoint URL for a participant to subscribe
@@ -71,7 +73,7 @@ export async function getRoomSignaling(roomId, userId, isPublisher = false) {
     roomId,
     userId,
     whipEndpoint: isPublisher ? getWhipEndpoint(roomId) : null,
-    whepEndpoint: getWhepEndpoint(roomId),
+    whepBaseUrl: WHEP_URL, // Base URL for constructing WHEP endpoint with channel ID
     smbUrl: SMB_URL,
     apiKey: SMB_API_KEY, // Required for WHIP/WHEP authentication
   };
