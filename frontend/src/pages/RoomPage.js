@@ -166,7 +166,7 @@ export async function attachRoomPageEvents(container, { id }) {
 async function leaveRoom(roomId) {
   try {
     if (roomConnection) {
-      roomConnection.disconnect();
+      await roomConnection.disconnect();
       roomConnection = null;
     }
     await roomsApi.leave(roomId);
@@ -179,7 +179,7 @@ async function leaveRoom(roomId) {
 async function endRoom(roomId) {
   try {
     if (roomConnection) {
-      roomConnection.disconnect();
+      await roomConnection.disconnect();
       roomConnection = null;
     }
     await roomsApi.end(roomId);

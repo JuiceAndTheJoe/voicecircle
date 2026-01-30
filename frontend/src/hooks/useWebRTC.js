@@ -5,53 +5,39 @@ export class RoomConnection {
     this.roomId = roomId;
     this.userId = userId;
     this.role = role;
-    this.peerConnection = null;
+    this.publisherPc = null;  // For WHIP (sending audio)
+    this.subscriberPc = null; // For WHEP (receiving audio)
     this.localStream = null;
     this.remoteStreams = new Map();
     this.isMuted = true;
     this.onParticipantUpdate = null;
     this.onSpeakingChange = null;
+    this.whipResourceUrl = null;
+    this.whepResourceUrl = null;
+    this.audioElements = new Map(); // Track audio elements for remote streams
   }
 
   async connect(signaling) {
-    // Create peer connection with ICE servers
-    const config = {
-      iceServers: signaling?.iceServers || [
-        { urls: 'stun:stun.l.google.com:19302' }
-      ]
-    };
+    const iceServers = signaling?.iceServers || [
+      { urls: 'stun:stun.l.google.com:19302' }
+    ];
 
-    this.peerConnection = new RTCPeerConnection(config);
+    // If speaker/host, setup publishing via WHIP
+    if ((this.role === 'host' || this.role === 'speaker') && signaling?.whipEndpoint) {
+      await this.setupPublisher(signaling.whipEndpoint, iceServers);
+    }
 
-    // Handle ICE candidates
-    this.peerConnection.onicecandidate = (event) => {
-      if (event.candidate) {
-        // In a real implementation, send candidate to signaling server
-        console.log('ICE candidate:', event.candidate);
-      }
-    };
-
-    // Handle remote tracks
-    this.peerConnection.ontrack = (event) => {
-      const stream = event.streams[0];
-      if (stream) {
-        this.remoteStreams.set(stream.id, stream);
-        if (this.onParticipantUpdate) {
-          this.onParticipantUpdate();
-        }
-      }
-    };
-
-    // If speaker/host, get local audio
-    if (this.role === 'host' || this.role === 'speaker') {
-      await this.setupLocalAudio();
+    // All participants subscribe via WHEP to receive audio
+    if (signaling?.whepEndpoint) {
+      await this.setupSubscriber(signaling.whepEndpoint, iceServers);
     }
 
     return true;
   }
 
-  async setupLocalAudio() {
+  async setupPublisher(whipEndpoint, iceServers) {
     try {
+      // Get local audio
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
         video: false
@@ -62,19 +48,179 @@ export class RoomConnection {
         track.enabled = false;
       });
 
-      // Add tracks to peer connection
+      // Create publisher peer connection
+      this.publisherPc = new RTCPeerConnection({ iceServers });
+
+      // Add local tracks
       this.localStream.getTracks().forEach(track => {
-        this.peerConnection?.addTrack(track, this.localStream);
+        this.publisherPc.addTrack(track, this.localStream);
       });
 
-      // Setup audio level detection
+      // Setup audio level detection for speaking indicator
       this.setupAudioLevelDetection();
 
-      return true;
+      // Wait for ICE gathering to complete, then send offer via WHIP
+      await this.publishViaWhip(whipEndpoint);
+
+      console.log('WHIP publisher connected');
     } catch (error) {
-      console.error('Failed to get local audio:', error);
-      return false;
+      console.error('Failed to setup publisher:', error);
     }
+  }
+
+  async publishViaWhip(whipEndpoint) {
+    // Create offer
+    const offer = await this.publisherPc.createOffer();
+    await this.publisherPc.setLocalDescription(offer);
+
+    // Wait for ICE gathering to complete
+    await this.waitForIceGathering(this.publisherPc);
+
+    // Get the complete offer with ICE candidates
+    const completeOffer = this.publisherPc.localDescription;
+
+    // POST offer to WHIP endpoint
+    const response = await fetch(whipEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/sdp'
+      },
+      body: completeOffer.sdp
+    });
+
+    if (!response.ok) {
+      throw new Error(`WHIP publish failed: ${response.status} ${response.statusText}`);
+    }
+
+    // Store resource URL for later cleanup
+    this.whipResourceUrl = response.headers.get('Location') || whipEndpoint;
+
+    // Get SDP answer
+    const answerSdp = await response.text();
+    const answer = new RTCSessionDescription({
+      type: 'answer',
+      sdp: answerSdp
+    });
+
+    await this.publisherPc.setRemoteDescription(answer);
+  }
+
+  async setupSubscriber(whepEndpoint, iceServers) {
+    try {
+      // Create subscriber peer connection
+      this.subscriberPc = new RTCPeerConnection({ iceServers });
+
+      // Handle incoming tracks
+      this.subscriberPc.ontrack = (event) => {
+        console.log('Received remote track:', event.track.kind);
+        const stream = event.streams[0];
+        if (stream && !this.remoteStreams.has(stream.id)) {
+          this.remoteStreams.set(stream.id, stream);
+          this.playRemoteAudio(stream);
+          if (this.onParticipantUpdate) {
+            this.onParticipantUpdate();
+          }
+        }
+      };
+
+      // Subscribe via WHEP
+      await this.subscribeViaWhep(whepEndpoint);
+
+      console.log('WHEP subscriber connected');
+    } catch (error) {
+      console.error('Failed to setup subscriber:', error);
+    }
+  }
+
+  async subscribeViaWhep(whepEndpoint) {
+    // For WHEP, we need to add a recvonly transceiver first
+    this.subscriberPc.addTransceiver('audio', { direction: 'recvonly' });
+
+    // Create offer
+    const offer = await this.subscriberPc.createOffer();
+    await this.subscriberPc.setLocalDescription(offer);
+
+    // Wait for ICE gathering
+    await this.waitForIceGathering(this.subscriberPc);
+
+    const completeOffer = this.subscriberPc.localDescription;
+
+    // POST offer to WHEP endpoint
+    const response = await fetch(whepEndpoint, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/sdp'
+      },
+      body: completeOffer.sdp
+    });
+
+    if (!response.ok) {
+      throw new Error(`WHEP subscribe failed: ${response.status} ${response.statusText}`);
+    }
+
+    // Store resource URL for cleanup
+    this.whepResourceUrl = response.headers.get('Location') || whepEndpoint;
+
+    // Get SDP answer
+    const answerSdp = await response.text();
+    const answer = new RTCSessionDescription({
+      type: 'answer',
+      sdp: answerSdp
+    });
+
+    await this.subscriberPc.setRemoteDescription(answer);
+  }
+
+  waitForIceGathering(pc) {
+    return new Promise((resolve) => {
+      if (pc.iceGatheringState === 'complete') {
+        resolve();
+        return;
+      }
+
+      const checkState = () => {
+        if (pc.iceGatheringState === 'complete') {
+          pc.removeEventListener('icegatheringstatechange', checkState);
+          resolve();
+        }
+      };
+
+      pc.addEventListener('icegatheringstatechange', checkState);
+
+      // Timeout fallback after 5 seconds
+      setTimeout(() => {
+        pc.removeEventListener('icegatheringstatechange', checkState);
+        resolve();
+      }, 5000);
+    });
+  }
+
+  playRemoteAudio(stream) {
+    // Create an audio element to play the remote stream
+    const audio = document.createElement('audio');
+    audio.srcObject = stream;
+    audio.autoplay = true;
+    audio.playsInline = true;
+
+    // Some browsers require the element to be in the DOM
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
+
+    // Store reference for cleanup
+    this.audioElements.set(stream.id, audio);
+
+    // Handle autoplay restrictions
+    audio.play().catch(err => {
+      console.warn('Autoplay blocked, will play on user interaction:', err);
+      // Add a one-time click handler to start playback
+      const startPlayback = () => {
+        audio.play();
+        document.removeEventListener('click', startPlayback);
+      };
+      document.addEventListener('click', startPlayback);
+    });
+
+    console.log('Playing remote audio stream:', stream.id);
   }
 
   setupAudioLevelDetection() {
@@ -128,17 +274,47 @@ export class RoomConnection {
     });
   }
 
-  disconnect() {
+  async disconnect() {
     // Stop local stream
     if (this.localStream) {
       this.localStream.getTracks().forEach(track => track.stop());
       this.localStream = null;
     }
 
-    // Close peer connection
-    if (this.peerConnection) {
-      this.peerConnection.close();
-      this.peerConnection = null;
+    // Remove audio elements
+    this.audioElements.forEach(audio => {
+      audio.pause();
+      audio.srcObject = null;
+      audio.remove();
+    });
+    this.audioElements.clear();
+
+    // Close publisher connection and cleanup WHIP resource
+    if (this.publisherPc) {
+      this.publisherPc.close();
+      this.publisherPc = null;
+    }
+    if (this.whipResourceUrl) {
+      try {
+        await fetch(this.whipResourceUrl, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Failed to cleanup WHIP resource:', e);
+      }
+      this.whipResourceUrl = null;
+    }
+
+    // Close subscriber connection and cleanup WHEP resource
+    if (this.subscriberPc) {
+      this.subscriberPc.close();
+      this.subscriberPc = null;
+    }
+    if (this.whepResourceUrl) {
+      try {
+        await fetch(this.whepResourceUrl, { method: 'DELETE' });
+      } catch (e) {
+        console.warn('Failed to cleanup WHEP resource:', e);
+      }
+      this.whepResourceUrl = null;
     }
 
     // Clear remote streams
