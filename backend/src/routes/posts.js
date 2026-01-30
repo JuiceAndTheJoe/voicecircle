@@ -12,7 +12,7 @@ import {
   updateUser,
   getFollowing
 } from '../services/database.js';
-import { addNotification } from '../services/redis.js';
+import { addNotification, getOnlineUsers } from '../services/redis.js';
 import { authenticate, optionalAuth } from '../middleware/auth.js';
 import { validate, createPostRules, commentRules, paginationRules } from '../middleware/validation.js';
 
@@ -35,11 +35,12 @@ router.get('/feed', authenticate, paginationRules, validate, async (req, res, ne
     // Get authors for posts
     const authorIds = [...new Set(posts.map(p => p.userId))];
     const authors = await Promise.all(authorIds.map(id => getUserById(id)));
+    const onlineUsers = await getOnlineUsers(authorIds);
     const authorsMap = {};
     authors.forEach(a => {
       if (a) {
         delete a.password;
-        authorsMap[a._id] = a;
+        authorsMap[a._id] = { ...a, online: onlineUsers.includes(a._id) };
       }
     });
 
@@ -64,11 +65,12 @@ router.get('/explore', optionalAuth, paginationRules, validate, async (req, res,
     // Get authors
     const authorIds = [...new Set(posts.map(p => p.userId))];
     const authors = await Promise.all(authorIds.map(id => getUserById(id)));
+    const onlineUsers = await getOnlineUsers(authorIds);
     const authorsMap = {};
     authors.forEach(a => {
       if (a) {
         delete a.password;
-        authorsMap[a._id] = a;
+        authorsMap[a._id] = { ...a, online: onlineUsers.includes(a._id) };
       }
     });
 
@@ -93,7 +95,11 @@ router.get('/:id', optionalAuth, async (req, res, next) => {
     }
 
     const author = await getUserById(post.userId);
-    if (author) delete author.password;
+    if (author) {
+      delete author.password;
+      const onlineUsers = await getOnlineUsers([author._id]);
+      author.online = onlineUsers.includes(author._id);
+    }
 
     res.json({
       post: {
@@ -114,7 +120,11 @@ router.get('/user/:userId', optionalAuth, paginationRules, validate, async (req,
     const posts = await getPostsByUser(req.params.userId, parseInt(limit), parseInt(skip));
 
     const author = await getUserById(req.params.userId);
-    if (author) delete author.password;
+    if (author) {
+      delete author.password;
+      const onlineUsers = await getOnlineUsers([author._id]);
+      author.online = onlineUsers.includes(author._id);
+    }
 
     const postsWithAuthor = posts.map(post => ({
       ...post,

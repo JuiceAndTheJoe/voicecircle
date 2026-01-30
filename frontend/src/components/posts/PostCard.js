@@ -34,7 +34,7 @@ export function PostCard(post) {
   return `
     <article class="post-card" data-post-id="${_id}">
       <div class="post-header">
-        ${Avatar({ user: author, clickable: true })}
+        ${Avatar({ user: author, clickable: true, showOnline: true })}
         <div class="post-author">
           <a href="#/profile/${author?._id}" class="post-author-name">${author?.displayName || author?.username || "Unknown"}</a>
           <span class="post-author-username">@${author?.username || "unknown"}</span>

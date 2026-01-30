@@ -368,6 +368,13 @@ a.avatar-wrapper {
   right: 0;
 }
 
+/* Larger indicator for xl avatars (profile page) */
+.avatar-wrapper:has(.avatar-xl) .online-indicator {
+  width: 24px;
+  height: 24px;
+  border-width: 3px;
+}
+
 /* Post Card */
 .post-card {
   background: var(--bg-card);
