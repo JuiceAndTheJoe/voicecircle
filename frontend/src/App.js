@@ -14,6 +14,7 @@ import { RoomPage, attachRoomPageEvents } from './pages/RoomPage.js';
 import { ProfilePage, attachProfilePageEvents } from './pages/ProfilePage.js';
 import { LoginPage, attachLoginPageEvents } from './pages/LoginPage.js';
 import { RegisterPage, attachRegisterPageEvents } from './pages/RegisterPage.js';
+import { SettingsPage, attachSettingsPageEvents } from './pages/SettingsPage.js';
 
 // Register routes
 registerRoute('/', {
@@ -56,6 +57,12 @@ registerRoute('/register', {
   page: RegisterPage,
   attachEvents: attachRegisterPageEvents,
   guestOnly: true
+});
+
+registerRoute('/settings', {
+  page: SettingsPage,
+  attachEvents: attachSettingsPageEvents,
+  auth: true
 });
 
 // Register 404 handler
