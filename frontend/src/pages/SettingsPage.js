@@ -35,11 +35,12 @@ export async function SettingsPage() {
         </div>
 
         <div class="form-group">
-          <label for="displayName">Display Name</label>
+          <label class="form-label" for="displayName">Display Name</label>
           <input
             type="text"
             id="displayName"
             name="displayName"
+            class="form-input"
             value="${escapeAttr(user.displayName || '')}"
             placeholder="Your display name"
             maxlength="50"
@@ -47,10 +48,11 @@ export async function SettingsPage() {
         </div>
 
         <div class="form-group">
-          <label for="username">Username</label>
+          <label class="form-label" for="username">Username</label>
           <input
             type="text"
             id="username"
+            class="form-input"
             value="@${escapeAttr(user.username)}"
             disabled
           >
@@ -58,10 +60,11 @@ export async function SettingsPage() {
         </div>
 
         <div class="form-group">
-          <label for="bio">Bio</label>
+          <label class="form-label" for="bio">Bio</label>
           <textarea
             id="bio"
             name="bio"
+            class="form-input"
             rows="3"
             placeholder="Tell us about yourself"
             maxlength="200"
