@@ -42,10 +42,8 @@ export async function authenticate(req, res, next) {
     req.user = user;
     req.userId = user._id;
 
-    // Update user presence (non-blocking, don't fail auth if Redis is down)
-    setUserOnline(user._id).catch(err => {
-      console.error('Redis setUserOnline failed:', err.message);
-    });
+    // Update user presence
+    await setUserOnline(user._id);
 
     next();
   } catch (error) {
@@ -72,8 +70,7 @@ export async function optionalAuth(req, res, next) {
         delete user.password;
         req.user = user;
         req.userId = user._id;
-        // Non-blocking presence update
-        refreshUserOnline(user._id).catch(() => {});
+        await refreshUserOnline(user._id);
       }
     }
 

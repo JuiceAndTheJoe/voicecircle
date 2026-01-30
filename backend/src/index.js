@@ -7,7 +7,7 @@ import rateLimit from 'express-rate-limit';
 
 import { initializeDatabase } from './services/database.js';
 import { initializeStorage } from './services/storage.js';
-import { initializeRedis, isRedisAvailable } from './services/redis.js';
+import { initializeRedis } from './services/redis.js';
 
 import authRoutes from './routes/auth.js';
 import userRoutes from './routes/users.js';
@@ -89,13 +89,9 @@ async function startServer() {
     await initializeStorage();
     console.log('✅ Storage connected');
 
-    // Initialize Redis (non-fatal if unavailable)
+    // Initialize Redis
     await initializeRedis();
-    if (isRedisAvailable()) {
-      console.log('✅ Redis connected');
-    } else {
-      console.log('⚠️  Redis unavailable (presence/notifications disabled)');
-    }
+    console.log('✅ Redis connected');
 
     app.listen(PORT, () => {
       console.log(`✅ VoiceCircle server running on port ${PORT}`);
