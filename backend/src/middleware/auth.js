@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { getUserById } from '../services/database.js';
-import { setUserOnline, refreshUserOnline } from '../services/redis.js';
+import { setUserOnline } from '../services/redis.js';
 
 const JWT_SECRET = process.env.JWT_SECRET || 'voicecircle-secret-key';
 
@@ -70,7 +70,7 @@ export async function optionalAuth(req, res, next) {
         delete user.password;
         req.user = user;
         req.userId = user._id;
-        await refreshUserOnline(user._id);
+        await setUserOnline(user._id);
       }
     }
 
