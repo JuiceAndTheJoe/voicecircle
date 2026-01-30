@@ -4,7 +4,7 @@ let redis;
 
 // OSC Default Configuration
 const OSC_DEFAULTS = {
-  REDIS_URL: 'redis://172.232.131.169:10517'
+  REDIS_URL: 'redis://172.232.131.169:10522'
 };
 
 // Key prefixes
@@ -22,6 +22,8 @@ const TTL = {
   SESSION: 86400 * 7 // 7 days
 };
 
+let redisAvailable = false;
+
 export async function initializeRedis() {
   const redisUrl = process.env.REDIS_URL || OSC_DEFAULTS.REDIS_URL;
 
@@ -29,7 +31,8 @@ export async function initializeRedis() {
     redis = new Redis(redisUrl, {
       maxRetriesPerRequest: 3,
       retryDelayOnFailover: 100,
-      lazyConnect: true
+      lazyConnect: true,
+      connectTimeout: 5000
     });
   } else {
     redis = new Redis({
@@ -37,54 +40,78 @@ export async function initializeRedis() {
       port: process.env.REDIS_PORT || 6379,
       password: process.env.REDIS_PASSWORD,
       maxRetriesPerRequest: 3,
-      lazyConnect: true
+      lazyConnect: true,
+      connectTimeout: 5000
     });
   }
 
-  await redis.connect();
-
   redis.on('error', (err) => {
     console.error('Redis error:', err.message);
+    redisAvailable = false;
   });
 
   redis.on('connect', () => {
     console.log('  Redis connected');
+    redisAvailable = true;
   });
+
+  try {
+    await redis.connect();
+    redisAvailable = true;
+  } catch (err) {
+    console.warn('Redis connection failed, continuing without Redis:', err.message);
+    redisAvailable = false;
+  }
+}
+
+export function isRedisAvailable() {
+  return redisAvailable;
 }
 
 // User presence
 export async function setUserOnline(userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.USER_ONLINE}${userId}`;
   await redis.setex(key, TTL.USER_ONLINE, Date.now().toString());
 }
 
 export async function setUserOffline(userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.USER_ONLINE}${userId}`;
   await redis.del(key);
 }
 
 export async function isUserOnline(userId) {
-  const key = `${KEYS.USER_ONLINE}${userId}`;
-  const result = await redis.get(key);
-  return result !== null;
+  if (!redisAvailable) return false;
+  try {
+    const key = `${KEYS.USER_ONLINE}${userId}`;
+    const result = await redis.get(key);
+    return result !== null;
+  } catch {
+    return false;
+  }
 }
 
 export async function getOnlineUsers(userIds) {
-  if (!userIds.length) return [];
-
-  const keys = userIds.map(id => `${KEYS.USER_ONLINE}${id}`);
-  const results = await redis.mget(keys);
-
-  return userIds.filter((_, index) => results[index] !== null);
+  if (!redisAvailable || !userIds.length) return [];
+  try {
+    const keys = userIds.map(id => `${KEYS.USER_ONLINE}${id}`);
+    const results = await redis.mget(keys);
+    return userIds.filter((_, index) => results[index] !== null);
+  } catch {
+    return [];
+  }
 }
 
 export async function refreshUserOnline(userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.USER_ONLINE}${userId}`;
   await redis.expire(key, TTL.USER_ONLINE);
 }
 
 // Room participants
 export async function addRoomParticipant(roomId, userId, role = 'listener') {
+  if (!redisAvailable) return;
   const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
   const data = JSON.stringify({ userId, role, joinedAt: Date.now() });
   await redis.hset(key, userId, data);
@@ -94,27 +121,39 @@ export async function addRoomParticipant(roomId, userId, role = 'listener') {
 }
 
 export async function removeRoomParticipant(roomId, userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
   await redis.hdel(key, userId);
   await updateActiveRoomScore(roomId);
 }
 
 export async function getRoomParticipants(roomId) {
-  const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
-  const participants = await redis.hgetall(key);
+  if (!redisAvailable) return [];
+  try {
+    const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
+    const participants = await redis.hgetall(key);
 
-  return Object.entries(participants).map(([userId, data]) => ({
-    userId,
-    ...JSON.parse(data)
-  }));
+    return Object.entries(participants).map(([userId, data]) => ({
+      userId,
+      ...JSON.parse(data)
+    }));
+  } catch {
+    return [];
+  }
 }
 
 export async function getRoomParticipantCount(roomId) {
-  const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
-  return await redis.hlen(key);
+  if (!redisAvailable) return 0;
+  try {
+    const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
+    return await redis.hlen(key);
+  } catch {
+    return 0;
+  }
 }
 
 export async function updateParticipantRole(roomId, userId, role) {
+  if (!redisAvailable) return;
   const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
   const existing = await redis.hget(key, userId);
 
@@ -126,6 +165,7 @@ export async function updateParticipantRole(roomId, userId, role) {
 }
 
 export async function clearRoomParticipants(roomId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.ROOM_PARTICIPANTS}${roomId}`;
   await redis.del(key);
   await redis.zrem(KEYS.ACTIVE_ROOMS, roomId);
@@ -133,6 +173,7 @@ export async function clearRoomParticipants(roomId) {
 
 // Active rooms (sorted by participant count)
 async function updateActiveRoomScore(roomId) {
+  if (!redisAvailable) return;
   const count = await getRoomParticipantCount(roomId);
   if (count > 0) {
     await redis.zadd(KEYS.ACTIVE_ROOMS, count, roomId);
@@ -142,39 +183,52 @@ async function updateActiveRoomScore(roomId) {
 }
 
 export async function getActiveRooms(limit = 20) {
-  // Get rooms sorted by participant count (descending)
-  const rooms = await redis.zrevrange(KEYS.ACTIVE_ROOMS, 0, limit - 1, 'WITHSCORES');
+  if (!redisAvailable) return [];
+  try {
+    // Get rooms sorted by participant count (descending)
+    const rooms = await redis.zrevrange(KEYS.ACTIVE_ROOMS, 0, limit - 1, 'WITHSCORES');
 
-  const result = [];
-  for (let i = 0; i < rooms.length; i += 2) {
-    result.push({
-      roomId: rooms[i],
-      participantCount: parseInt(rooms[i + 1])
-    });
+    const result = [];
+    for (let i = 0; i < rooms.length; i += 2) {
+      result.push({
+        roomId: rooms[i],
+        participantCount: parseInt(rooms[i + 1])
+      });
+    }
+
+    return result;
+  } catch {
+    return [];
   }
-
-  return result;
 }
 
 // User sessions
 export async function setUserSession(userId, sessionData) {
+  if (!redisAvailable) return;
   const key = `${KEYS.USER_SESSION}${userId}`;
   await redis.setex(key, TTL.SESSION, JSON.stringify(sessionData));
 }
 
 export async function getUserSession(userId) {
-  const key = `${KEYS.USER_SESSION}${userId}`;
-  const data = await redis.get(key);
-  return data ? JSON.parse(data) : null;
+  if (!redisAvailable) return null;
+  try {
+    const key = `${KEYS.USER_SESSION}${userId}`;
+    const data = await redis.get(key);
+    return data ? JSON.parse(data) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function deleteUserSession(userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.USER_SESSION}${userId}`;
   await redis.del(key);
 }
 
 // Notifications
 export async function addNotification(userId, notification) {
+  if (!redisAvailable) return;
   const key = `${KEYS.NOTIFICATIONS}${userId}`;
   await redis.lpush(key, JSON.stringify({
     ...notification,
@@ -185,22 +239,30 @@ export async function addNotification(userId, notification) {
 }
 
 export async function getNotifications(userId, limit = 20) {
-  const key = `${KEYS.NOTIFICATIONS}${userId}`;
-  const notifications = await redis.lrange(key, 0, limit - 1);
-  return notifications.map(n => JSON.parse(n));
+  if (!redisAvailable) return [];
+  try {
+    const key = `${KEYS.NOTIFICATIONS}${userId}`;
+    const notifications = await redis.lrange(key, 0, limit - 1);
+    return notifications.map(n => JSON.parse(n));
+  } catch {
+    return [];
+  }
 }
 
 export async function clearNotifications(userId) {
+  if (!redisAvailable) return;
   const key = `${KEYS.NOTIFICATIONS}${userId}`;
   await redis.del(key);
 }
 
 // Pub/Sub for real-time updates
 export function createSubscriber() {
+  if (!redisAvailable) return null;
   return redis.duplicate();
 }
 
 export async function publish(channel, message) {
+  if (!redisAvailable) return;
   await redis.publish(channel, JSON.stringify(message));
 }
 

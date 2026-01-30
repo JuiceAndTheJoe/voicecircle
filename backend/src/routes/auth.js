@@ -46,9 +46,11 @@ router.post('/register', registerRules, validate, async (req, res, next) => {
     // Generate token
     const token = generateToken(user);
 
-    // Set user online
-    await setUserOnline(user._id);
-    await setUserSession(user._id, { token, createdAt: Date.now() });
+    // Set user online (non-blocking)
+    Promise.all([
+      setUserOnline(user._id),
+      setUserSession(user._id, { token, createdAt: Date.now() })
+    ]).catch(() => {});
 
     // Remove password from response
     delete user.password;
@@ -82,9 +84,11 @@ router.post('/login', loginRules, validate, async (req, res, next) => {
     // Generate token
     const token = generateToken(user);
 
-    // Set user online
-    await setUserOnline(user._id);
-    await setUserSession(user._id, { token, createdAt: Date.now() });
+    // Set user online (non-blocking)
+    Promise.all([
+      setUserOnline(user._id),
+      setUserSession(user._id, { token, createdAt: Date.now() })
+    ]).catch(() => {});
 
     // Remove password from response
     delete user.password;
@@ -102,8 +106,11 @@ router.post('/login', loginRules, validate, async (req, res, next) => {
 router.post('/logout', authenticate, async (req, res, next) => {
   try {
     const { setUserOffline } = await import('../services/redis.js');
-    await setUserOffline(req.userId);
-    await deleteUserSession(req.userId);
+    // Non-blocking cleanup
+    Promise.all([
+      setUserOffline(req.userId),
+      deleteUserSession(req.userId)
+    ]).catch(() => {});
 
     res.json({ message: 'Logged out successfully' });
   } catch (error) {
@@ -120,7 +127,8 @@ router.get('/me', authenticate, async (req, res) => {
 router.post('/refresh', authenticate, async (req, res, next) => {
   try {
     const token = generateToken(req.user);
-    await setUserSession(req.userId, { token, createdAt: Date.now() });
+    // Non-blocking session update
+    setUserSession(req.userId, { token, createdAt: Date.now() }).catch(() => {});
 
     res.json({ token });
   } catch (error) {

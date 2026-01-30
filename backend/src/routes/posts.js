@@ -196,15 +196,15 @@ router.post('/:id/like', authenticate, async (req, res, next) => {
         updatedAt: new Date().toISOString()
       });
 
-      // Send notification to post author
+      // Send notification to post author (non-blocking)
       if (post.userId !== req.userId) {
-        await addNotification(post.userId, {
+        addNotification(post.userId, {
           type: 'like',
           fromUserId: req.userId,
           fromUsername: req.user.username,
           postId: post._id,
           message: `${req.user.username} liked your post`
-        });
+        }).catch(() => {});
       }
     }
 
@@ -243,15 +243,15 @@ router.post('/:id/comments', authenticate, commentRules, validate, async (req, r
       updatedAt: new Date().toISOString()
     });
 
-    // Send notification to post author
+    // Send notification to post author (non-blocking)
     if (post.userId !== req.userId) {
-      await addNotification(post.userId, {
+      addNotification(post.userId, {
         type: 'comment',
         fromUserId: req.userId,
         fromUsername: req.user.username,
         postId: post._id,
         message: `${req.user.username} commented on your post`
-      });
+      }).catch(() => {});
     }
 
     res.status(201).json({ comment });
