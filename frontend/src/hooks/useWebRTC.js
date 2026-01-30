@@ -15,12 +15,16 @@ export class RoomConnection {
     this.whipResourceUrl = null;
     this.whepResourceUrl = null;
     this.audioElements = new Map(); // Track audio elements for remote streams
+    this.apiKey = null; // API key for WHIP/WHEP authentication
   }
 
   async connect(signaling) {
     const iceServers = signaling?.iceServers || [
       { urls: 'stun:stun.l.google.com:19302' }
     ];
+
+    // Store API key for WHIP/WHEP authentication
+    this.apiKey = signaling?.apiKey;
 
     // If speaker/host, setup publishing via WHIP
     if ((this.role === 'host' || this.role === 'speaker') && signaling?.whipEndpoint) {
@@ -80,16 +84,22 @@ export class RoomConnection {
     const completeOffer = this.publisherPc.localDescription;
 
     // POST offer to WHIP endpoint
+    const headers = {
+      'Content-Type': 'application/sdp'
+    };
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
     const response = await fetch(whipEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/sdp'
-      },
+      headers,
       body: completeOffer.sdp
     });
 
     if (!response.ok) {
-      throw new Error(`WHIP publish failed: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`WHIP publish failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     // Store resource URL for later cleanup
@@ -146,16 +156,22 @@ export class RoomConnection {
     const completeOffer = this.subscriberPc.localDescription;
 
     // POST offer to WHEP endpoint
+    const headers = {
+      'Content-Type': 'application/sdp'
+    };
+    if (this.apiKey) {
+      headers['Authorization'] = `Bearer ${this.apiKey}`;
+    }
+
     const response = await fetch(whepEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/sdp'
-      },
+      headers,
       body: completeOffer.sdp
     });
 
     if (!response.ok) {
-      throw new Error(`WHEP subscribe failed: ${response.status} ${response.statusText}`);
+      const errorText = await response.text().catch(() => '');
+      throw new Error(`WHEP subscribe failed: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     // Store resource URL for cleanup

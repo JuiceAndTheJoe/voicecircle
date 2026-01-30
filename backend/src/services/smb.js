@@ -51,13 +51,15 @@ export async function getConference(conferenceId) {
 }
 
 // Generate WHIP endpoint URL for a participant to publish
-export function getWhipEndpoint(conferenceId, participantId) {
-  return `${WHIP_URL}/whip/${conferenceId}/${participantId}`;
+// All publishers use the same conference endpoint - uniqueness comes from the resource URL returned
+export function getWhipEndpoint(conferenceId) {
+  return `${WHIP_URL}/api/v2/whip/${conferenceId}`;
 }
 
 // Generate WHEP endpoint URL for a participant to subscribe
-export function getWhepEndpoint(conferenceId, participantId) {
-  return `${WHEP_URL}/whep/${conferenceId}/${participantId}`;
+// All subscribers use the same channel endpoint - the channel ID matches the conference ID
+export function getWhepEndpoint(conferenceId) {
+  return `${WHEP_URL}/whep/channel/${conferenceId}`;
 }
 
 // Get signaling info for a room
@@ -68,9 +70,10 @@ export async function getRoomSignaling(roomId, userId, isPublisher = false) {
   return {
     roomId,
     userId,
-    whipEndpoint: isPublisher ? getWhipEndpoint(roomId, userId) : null,
-    whepEndpoint: getWhepEndpoint(roomId, userId),
+    whipEndpoint: isPublisher ? getWhipEndpoint(roomId) : null,
+    whepEndpoint: getWhepEndpoint(roomId),
     smbUrl: SMB_URL,
+    apiKey: SMB_API_KEY, // Required for WHIP/WHEP authentication
   };
 }
 
