@@ -44,7 +44,7 @@ export function attachAudioPlayerEvents(container) {
     // Handle audio loading errors
     audio.addEventListener("error", (e) => {
       timeDisplay.textContent = "0:00";
-      console.warn("Failed to load audio:", src);
+      console.warn("Failed to load audio:", audio.src);
     });
 
     // Play/pause toggle

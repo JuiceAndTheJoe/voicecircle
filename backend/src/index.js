@@ -27,8 +27,22 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // Security middleware
+const S3_DOMAIN = process.env.S3_ENDPOINT
+  ? new URL(process.env.S3_ENDPOINT).host
+  : 'team2-voicecirclestore.minio-minio.auto.prod.osaas.io';
+
 app.use(helmet({
-  crossOriginResourcePolicy: { policy: "cross-origin" }
+  crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "blob:", `https://${S3_DOMAIN}`],
+      mediaSrc: ["'self'", "blob:", `https://${S3_DOMAIN}`],
+      connectSrc: ["'self'", `https://${S3_DOMAIN}`],
+    },
+  },
 }));
 
 // CORS configuration
