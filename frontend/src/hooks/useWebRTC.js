@@ -54,24 +54,29 @@ export class RoomConnection {
       }
     }
 
-    // All participants subscribe via WHEP to receive audio
-    // Need to get the channel ID first (either from our own publish or from backend)
-    const channelId = this.channelId || signaling?.channelId;
-    console.log('[SUBSCRIBE] Attempting to subscribe. channelId:', channelId, 'role:', this.role);
+    // Only listeners subscribe via WHEP to receive audio
+    // Speakers/hosts only publish via WHIP, they don't subscribe
+    // (In a multi-speaker scenario, each speaker would need to subscribe to OTHER speakers' channels)
+    if (this.role === 'listener') {
+      const channelId = this.channelId || signaling?.channelId;
+      console.log('[SUBSCRIBE] Attempting to subscribe as listener. channelId:', channelId);
 
-    if (channelId && this.whepBaseUrl) {
-      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
-      console.log('[SUBSCRIBE] Using channel ID, setting up subscriber:', whepEndpoint);
-      await this.setupSubscriber(whepEndpoint, iceServers);
-    } else if (signaling?.channelId) {
-      // Fallback: use channelId from signaling if provided
-      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
-      console.log('[SUBSCRIBE] Using signaling channelId:', signaling.channelId);
-      await this.setupSubscriber(whepEndpoint, iceServers);
+      if (channelId && this.whepBaseUrl) {
+        const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
+        console.log('[SUBSCRIBE] Using channel ID, setting up subscriber:', whepEndpoint);
+        await this.setupSubscriber(whepEndpoint, iceServers);
+      } else if (signaling?.channelId) {
+        // Fallback: use channelId from signaling if provided
+        const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
+        console.log('[SUBSCRIBE] Using signaling channelId:', signaling.channelId);
+        await this.setupSubscriber(whepEndpoint, iceServers);
+      } else {
+        console.log("[SUBSCRIBE] No channel ID available yet - polling for channel ID");
+        // Start polling for channel ID
+        this.startChannelIdPolling(iceServers);
+      }
     } else {
-      console.log("[SUBSCRIBE] No channel ID available yet - polling for channel ID");
-      // Start polling for channel ID
-      this.startChannelIdPolling(iceServers);
+      console.log('[SUBSCRIBE] Skipping subscription for role:', this.role, '(speakers only publish)');
     }
 
     return true;
