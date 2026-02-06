@@ -7,12 +7,19 @@ const OSC_DEFAULTS = {
   SMB_API_KEY: "voicecircle-api-key-2024",
   WHIP_URL: "https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io",
   WHEP_URL: "https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io",
+  // TURN server for NAT traversal
+  TURN_URL: "team2-vcturn.srperens-uturn.auto.prod.osaas.io",
+  TURN_USERNAME: "voicecircle",
+  TURN_PASSWORD: "voicecircle2024",
 };
 
 const SMB_URL = process.env.SMB_URL || OSC_DEFAULTS.SMB_URL;
 const SMB_API_KEY = process.env.SMB_API_KEY || OSC_DEFAULTS.SMB_API_KEY;
 const WHIP_URL = process.env.WHIP_URL || OSC_DEFAULTS.WHIP_URL;
 const WHEP_URL = process.env.WHEP_URL || OSC_DEFAULTS.WHEP_URL;
+const TURN_URL = process.env.TURN_URL || OSC_DEFAULTS.TURN_URL;
+const TURN_USERNAME = process.env.TURN_USERNAME || OSC_DEFAULTS.TURN_USERNAME;
+const TURN_PASSWORD = process.env.TURN_PASSWORD || OSC_DEFAULTS.TURN_PASSWORD;
 
 // Create a new conference/room in SMB
 export async function createConference(conferenceId) {
@@ -98,6 +105,19 @@ export async function getRoomSignaling(roomId, userId, isPublisher = false) {
     whepBaseUrl: WHEP_URL, // Base URL for constructing WHEP endpoint with channel ID
     smbUrl: SMB_URL,
     apiKey: SMB_API_KEY, // Required for WHIP/WHEP authentication
+    // ICE servers including TURN for NAT traversal
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      {
+        urls: [
+          `turn:${TURN_URL}:3478`,
+          `turn:${TURN_URL}:3478?transport=tcp`,
+        ],
+        username: TURN_USERNAME,
+        credential: TURN_PASSWORD,
+      },
+    ],
   };
 }
 

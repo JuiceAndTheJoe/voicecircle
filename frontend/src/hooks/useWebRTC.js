@@ -41,6 +41,9 @@ export class RoomConnection {
       { urls: "stun:stun2.l.google.com:19302" },
     ];
 
+    // Log ICE servers for debugging (check if TURN is included)
+    console.log('[ICE] Using ICE servers:', iceServers.map(s => s.urls));
+
     // Store API key for WHIP/WHEP authentication
     this.apiKey = signaling?.apiKey;
 
@@ -59,17 +62,16 @@ export class RoomConnection {
       signaling?.whipEndpoint
     ) {
       console.log('[PUBLISH] Setting up publisher as', this.role);
-      await this.setupPublisher(signaling.whipEndpoint, iceServers);
+      const publishSuccess = await this.setupPublisher(signaling.whipEndpoint, iceServers);
 
-      // Report channel ID to backend so other participants can subscribe
-      if (this.channelId) {
+      if (publishSuccess && this.channelId) {
+        // Report channel ID to backend so other participants can subscribe
         console.log('[PUBLISH] Channel ID extracted, reporting to backend:', this.channelId);
         await this.reportChannelId(this.channelId);
+        console.log('[PUBLISH] Successfully published via WHIP');
       } else {
-        console.error('[PUBLISH] ERROR: No channel ID after WHIP publish!');
+        console.error('[PUBLISH] ERROR: WHIP publish failed or no channel ID!');
       }
-
-      console.log('[PUBLISH] Successfully published via WHIP');
     }
 
     // Only listeners subscribe via WHEP to receive audio
@@ -204,8 +206,10 @@ export class RoomConnection {
       await this.publishViaWhip(whipEndpoint);
 
       console.log("WHIP publisher connected");
+      return true;
     } catch (error) {
       console.error("Failed to setup publisher:", error);
+      return false;
     }
   }
 
