@@ -3,9 +3,9 @@
 
 // OSC Default Configuration
 const OSC_DEFAULTS = {
-  SMB_URL: "https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io",
+  SMB_URL: "https://team2-vcsmb2.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io",
   SMB_API_KEY: "voicecircle-api-key-2024",
-  WHIP_URL: "https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io",
+  WHIP_URL: "https://team2-vcwhip2.eyevinn-smb-whip-bridge.auto.prod.osaas.io",
   WHEP_URL: "https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io",
   // TURN server for NAT traversal
   TURN_URL: "team2-vcturn.srperens-uturn.auto.prod.osaas.io",
