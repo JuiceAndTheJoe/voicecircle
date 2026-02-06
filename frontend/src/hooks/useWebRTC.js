@@ -5,7 +5,7 @@ export class RoomConnection {
     this.roomId = roomId;
     this.userId = userId;
     this.role = role;
-    this.publisherPc = null;  // For WHIP (sending audio)
+    this.publisherPc = null; // For WHIP (sending audio)
     this.subscriberPc = null; // For WHEP (receiving audio)
     this.localStream = null;
     this.remoteStreams = new Map();
@@ -18,14 +18,16 @@ export class RoomConnection {
     this.apiKey = null; // API key for WHIP/WHEP authentication
     this.channelId = null; // Channel ID for WHEP (extracted from WHIP response)
     this.whepBaseUrl = null; // Base URL for WHEP gateway
+    this.channelIdPollInterval = null; // Interval for polling channel ID
+    this.isSubscribed = false; // Track if we've successfully subscribed
   }
 
   async connect(signaling) {
     // Default ICE servers with STUN (TURN would need credentials)
     const iceServers = signaling?.iceServers || [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' }
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" },
     ];
 
     // Store API key for WHIP/WHEP authentication
@@ -36,7 +38,10 @@ export class RoomConnection {
 
     // If speaker/host, setup publishing via WHIP first
     // This creates the channel that subscribers will connect to
-    if ((this.role === 'host' || this.role === 'speaker') && signaling?.whipEndpoint) {
+    if (
+      (this.role === "host" || this.role === "speaker") &&
+      signaling?.whipEndpoint
+    ) {
       await this.setupPublisher(signaling.whipEndpoint, iceServers);
 
       // Report channel ID to backend so other participants can subscribe
@@ -56,7 +61,9 @@ export class RoomConnection {
       const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
       await this.setupSubscriber(whepEndpoint, iceServers);
     } else {
-      console.log('No channel ID available yet - waiting for host to publish');
+      console.log("No channel ID available yet - polling for channel ID");
+      // Start polling for channel ID
+      this.startChannelIdPolling(iceServers);
     }
 
     return true;
@@ -64,22 +71,67 @@ export class RoomConnection {
 
   async reportChannelId(channelId) {
     try {
-      const token = localStorage.getItem('voicecircle_token');
+      const token = localStorage.getItem("voicecircle_token");
       const response = await fetch(`/api/rooms/${this.roomId}/channel`, {
-        method: 'POST',
+        method: "POST",
         headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ channelId })
+        body: JSON.stringify({ channelId }),
       });
       if (response.ok) {
-        console.log('Reported channel ID to backend:', channelId);
+        console.log("Reported channel ID to backend:", channelId);
       } else {
-        console.warn('Failed to report channel ID:', response.status);
+        console.warn("Failed to report channel ID:", response.status);
       }
     } catch (error) {
-      console.warn('Failed to report channel ID:', error);
+      console.warn("Failed to report channel ID:", error);
+    }
+  }
+
+  startChannelIdPolling(iceServers) {
+    // Poll every 500ms for the channel ID
+    this.channelIdPollInterval = setInterval(async () => {
+      try {
+        const token = localStorage.getItem("voicecircle_token");
+        const response = await fetch(`/api/rooms/${this.roomId}/channel`, {
+          method: "GET",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        });
+
+        if (response.ok) {
+          const { channelId } = await response.json();
+          if (channelId && !this.isSubscribed) {
+            console.log("Channel ID found via polling:", channelId);
+            this.channelId = channelId;
+            this.stopChannelIdPolling();
+
+            // Setup subscriber now that we have the channel ID
+            const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
+            await this.setupSubscriber(whepEndpoint, iceServers);
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to poll for channel ID:", error);
+      }
+    }, 500);
+
+    // Stop polling after 30 seconds to prevent infinite polling
+    setTimeout(() => {
+      if (this.channelIdPollInterval) {
+        console.log("Channel ID polling timeout - stopping");
+        this.stopChannelIdPolling();
+      }
+    }, 30000);
+  }
+
+  stopChannelIdPolling() {
+    if (this.channelIdPollInterval) {
+      clearInterval(this.channelIdPollInterval);
+      this.channelIdPollInterval = null;
     }
   }
 
@@ -88,11 +140,11 @@ export class RoomConnection {
       // Get local audio
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: false
+        video: false,
       });
 
       // Mute by default
-      this.localStream.getAudioTracks().forEach(track => {
+      this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = false;
       });
 
@@ -100,7 +152,7 @@ export class RoomConnection {
       this.publisherPc = new RTCPeerConnection({ iceServers });
 
       // Add local tracks
-      this.localStream.getTracks().forEach(track => {
+      this.localStream.getTracks().forEach((track) => {
         this.publisherPc.addTrack(track, this.localStream);
       });
 
@@ -110,9 +162,9 @@ export class RoomConnection {
       // Wait for ICE gathering to complete, then send offer via WHIP
       await this.publishViaWhip(whipEndpoint);
 
-      console.log('WHIP publisher connected');
+      console.log("WHIP publisher connected");
     } catch (error) {
-      console.error('Failed to setup publisher:', error);
+      console.error("Failed to setup publisher:", error);
     }
   }
 
@@ -129,44 +181,46 @@ export class RoomConnection {
 
     // POST offer to WHIP endpoint
     const headers = {
-      'Content-Type': 'application/sdp'
+      "Content-Type": "application/sdp",
     };
     if (this.apiKey) {
-      headers['Authorization'] = `Bearer ${this.apiKey}`;
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
 
     const response = await fetch(whipEndpoint, {
-      method: 'POST',
+      method: "POST",
       headers,
-      body: completeOffer.sdp
+      body: completeOffer.sdp,
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`WHIP publish failed: ${response.status} ${response.statusText} - ${errorText}`);
+      const errorText = await response.text().catch(() => "");
+      throw new Error(
+        `WHIP publish failed: ${response.status} ${response.statusText} - ${errorText}`,
+      );
     }
 
     // Log all response headers for debugging
-    console.log('WHIP response headers:');
+    console.log("WHIP response headers:");
     response.headers.forEach((value, key) => {
       console.log(`  ${key}: ${value}`);
     });
 
     // Store resource URL for later cleanup
-    this.whipResourceUrl = response.headers.get('Location') || whipEndpoint;
-    console.log('WHIP resource URL:', this.whipResourceUrl);
+    this.whipResourceUrl = response.headers.get("Location") || whipEndpoint;
+    console.log("WHIP resource URL:", this.whipResourceUrl);
 
     // Extract channel ID from Location header
     // Format: /api/v2/whip/sfu-broadcaster/{channelId}
-    const locationParts = this.whipResourceUrl.split('/');
+    const locationParts = this.whipResourceUrl.split("/");
     this.channelId = locationParts[locationParts.length - 1];
-    console.log('Extracted channel ID:', this.channelId);
+    console.log("Extracted channel ID:", this.channelId);
 
     // Get SDP answer
     const answerSdp = await response.text();
     const answer = new RTCSessionDescription({
-      type: 'answer',
-      sdp: answerSdp
+      type: "answer",
+      sdp: answerSdp,
     });
 
     await this.publisherPc.setRemoteDescription(answer);
@@ -179,7 +233,7 @@ export class RoomConnection {
 
       // Handle incoming tracks
       this.subscriberPc.ontrack = (event) => {
-        console.log('Received remote track:', event.track.kind);
+        console.log("Received remote track:", event.track.kind);
         const stream = event.streams[0];
         if (stream && !this.remoteStreams.has(stream.id)) {
           this.remoteStreams.set(stream.id, stream);
@@ -193,9 +247,12 @@ export class RoomConnection {
       // Subscribe via WHEP
       await this.subscribeViaWhep(whepEndpoint);
 
-      console.log('WHEP subscriber connected');
+      // Mark as subscribed to prevent duplicate subscriptions
+      this.isSubscribed = true;
+
+      console.log("WHEP subscriber connected");
     } catch (error) {
-      console.error('Failed to setup subscriber:', error);
+      console.error("Failed to setup subscriber:", error);
     }
   }
 
@@ -206,35 +263,37 @@ export class RoomConnection {
 
     // Step 1: POST empty body to get server's offer
     const headers = {
-      'Content-Type': 'application/sdp'
+      "Content-Type": "application/sdp",
     };
     if (this.apiKey) {
-      headers['Authorization'] = `Bearer ${this.apiKey}`;
+      headers["Authorization"] = `Bearer ${this.apiKey}`;
     }
 
     const response = await fetch(whepEndpoint, {
-      method: 'POST',
+      method: "POST",
       headers,
-      body: '' // Empty body - server generates the offer
+      body: "", // Empty body - server generates the offer
     });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => '');
-      throw new Error(`WHEP subscribe failed: ${response.status} ${response.statusText} - ${errorText}`);
+      const errorText = await response.text().catch(() => "");
+      throw new Error(
+        `WHEP subscribe failed: ${response.status} ${response.statusText} - ${errorText}`,
+      );
     }
 
     // Store resource URL for cleanup and for sending answer
-    this.whepResourceUrl = response.headers.get('Location');
-    console.log('WHEP resource URL:', this.whepResourceUrl);
+    this.whepResourceUrl = response.headers.get("Location");
+    console.log("WHEP resource URL:", this.whepResourceUrl);
 
     // Get SDP offer from server
     const offerSdp = await response.text();
-    console.log('Received WHEP offer from server');
+    console.log("Received WHEP offer from server");
 
     // Set server's offer as remote description
     const offer = new RTCSessionDescription({
-      type: 'offer',
-      sdp: offerSdp
+      type: "offer",
+      sdp: offerSdp,
     });
     await this.subscriberPc.setRemoteDescription(offer);
 
@@ -249,50 +308,52 @@ export class RoomConnection {
 
     // Step 2: PATCH our answer to the resource URL
     const patchHeaders = {
-      'Content-Type': 'application/sdp'
+      "Content-Type": "application/sdp",
     };
     if (this.apiKey) {
-      patchHeaders['Authorization'] = `Bearer ${this.apiKey}`;
+      patchHeaders["Authorization"] = `Bearer ${this.apiKey}`;
     }
 
     // Resource URL might be relative, construct full URL
-    const resourceUrl = this.whepResourceUrl.startsWith('/')
+    const resourceUrl = this.whepResourceUrl.startsWith("/")
       ? new URL(this.whepResourceUrl, whepEndpoint).href
       : this.whepResourceUrl;
 
     const patchResponse = await fetch(resourceUrl, {
-      method: 'PATCH',
+      method: "PATCH",
       headers: patchHeaders,
-      body: completeAnswer.sdp
+      body: completeAnswer.sdp,
     });
 
     if (!patchResponse.ok) {
-      const errorText = await patchResponse.text().catch(() => '');
-      throw new Error(`WHEP answer failed: ${patchResponse.status} ${patchResponse.statusText} - ${errorText}`);
+      const errorText = await patchResponse.text().catch(() => "");
+      throw new Error(
+        `WHEP answer failed: ${patchResponse.status} ${patchResponse.statusText} - ${errorText}`,
+      );
     }
 
-    console.log('WHEP answer sent successfully');
+    console.log("WHEP answer sent successfully");
   }
 
   waitForIceGathering(pc) {
     return new Promise((resolve) => {
-      if (pc.iceGatheringState === 'complete') {
+      if (pc.iceGatheringState === "complete") {
         resolve();
         return;
       }
 
       const checkState = () => {
-        if (pc.iceGatheringState === 'complete') {
-          pc.removeEventListener('icegatheringstatechange', checkState);
+        if (pc.iceGatheringState === "complete") {
+          pc.removeEventListener("icegatheringstatechange", checkState);
           resolve();
         }
       };
 
-      pc.addEventListener('icegatheringstatechange', checkState);
+      pc.addEventListener("icegatheringstatechange", checkState);
 
       // Timeout fallback after 5 seconds
       setTimeout(() => {
-        pc.removeEventListener('icegatheringstatechange', checkState);
+        pc.removeEventListener("icegatheringstatechange", checkState);
         resolve();
       }, 5000);
     });
@@ -300,30 +361,30 @@ export class RoomConnection {
 
   playRemoteAudio(stream) {
     // Create an audio element to play the remote stream
-    const audio = document.createElement('audio');
+    const audio = document.createElement("audio");
     audio.srcObject = stream;
     audio.autoplay = true;
     audio.playsInline = true;
 
     // Some browsers require the element to be in the DOM
-    audio.style.display = 'none';
+    audio.style.display = "none";
     document.body.appendChild(audio);
 
     // Store reference for cleanup
     this.audioElements.set(stream.id, audio);
 
     // Handle autoplay restrictions
-    audio.play().catch(err => {
-      console.warn('Autoplay blocked, will play on user interaction:', err);
+    audio.play().catch((err) => {
+      console.warn("Autoplay blocked, will play on user interaction:", err);
       // Add a one-time click handler to start playback
       const startPlayback = () => {
         audio.play();
-        document.removeEventListener('click', startPlayback);
+        document.removeEventListener("click", startPlayback);
       };
-      document.addEventListener('click', startPlayback);
+      document.addEventListener("click", startPlayback);
     });
 
-    console.log('Playing remote audio stream:', stream.id);
+    console.log("Playing remote audio stream:", stream.id);
   }
 
   setupAudioLevelDetection() {
@@ -360,7 +421,7 @@ export class RoomConnection {
 
     this.isMuted = !this.isMuted;
 
-    this.localStream.getAudioTracks().forEach(track => {
+    this.localStream.getAudioTracks().forEach((track) => {
       track.enabled = !this.isMuted;
     });
 
@@ -372,20 +433,23 @@ export class RoomConnection {
 
     this.isMuted = muted;
 
-    this.localStream.getAudioTracks().forEach(track => {
+    this.localStream.getAudioTracks().forEach((track) => {
       track.enabled = !muted;
     });
   }
 
   async disconnect() {
+    // Stop channel ID polling if active
+    this.stopChannelIdPolling();
+
     // Stop local stream
     if (this.localStream) {
-      this.localStream.getTracks().forEach(track => track.stop());
+      this.localStream.getTracks().forEach((track) => track.stop());
       this.localStream = null;
     }
 
     // Remove audio elements
-    this.audioElements.forEach(audio => {
+    this.audioElements.forEach((audio) => {
       audio.pause();
       audio.srcObject = null;
       audio.remove();
@@ -399,9 +463,9 @@ export class RoomConnection {
     }
     if (this.whipResourceUrl) {
       try {
-        await fetch(this.whipResourceUrl, { method: 'DELETE' });
+        await fetch(this.whipResourceUrl, { method: "DELETE" });
       } catch (e) {
-        console.warn('Failed to cleanup WHIP resource:', e);
+        console.warn("Failed to cleanup WHIP resource:", e);
       }
       this.whipResourceUrl = null;
     }
@@ -413,15 +477,18 @@ export class RoomConnection {
     }
     if (this.whepResourceUrl) {
       try {
-        await fetch(this.whepResourceUrl, { method: 'DELETE' });
+        await fetch(this.whepResourceUrl, { method: "DELETE" });
       } catch (e) {
-        console.warn('Failed to cleanup WHEP resource:', e);
+        console.warn("Failed to cleanup WHEP resource:", e);
       }
       this.whepResourceUrl = null;
     }
 
     // Clear remote streams
     this.remoteStreams.clear();
+
+    // Reset subscribed flag
+    this.isSubscribed = false;
   }
 }
 
