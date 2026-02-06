@@ -110,8 +110,8 @@ router.post(
 
       const roomId = uuidv4();
 
-      // Conference will be created automatically on first join
-      // No need to create it here
+      // Create SMB conference with the room ID so WHEP subscribers can connect
+      await smbService.createConference(roomId);
 
       const room = await createRoom({
         _id: roomId,
@@ -403,7 +403,9 @@ router.post("/:id/channel", authenticate, async (req, res, next) => {
     const isSpeaker =
       room.speakers?.includes(req.userId) || room.hostId === req.userId;
     if (!isSpeaker) {
-      return res.status(403).json({ error: "Only speakers can set channel ID" });
+      return res
+        .status(403)
+        .json({ error: "Only speakers can set channel ID" });
     }
 
     const { channelId } = req.body;

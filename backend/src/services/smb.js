@@ -16,9 +16,34 @@ const WHEP_URL = process.env.WHEP_URL || OSC_DEFAULTS.WHEP_URL;
 
 // Create a new conference/room in SMB
 export async function createConference(conferenceId) {
-  // Skip conference creation - let it be created automatically on first join
-  console.log(`Skipping SMB conference creation for: ${conferenceId}`);
-  return { conferenceId };
+  try {
+    const response = await fetch(`${SMB_URL}/conferences`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SMB_API_KEY}`,
+      },
+      body: JSON.stringify({
+        id: conferenceId,
+      }),
+    });
+
+    if (!response.ok) {
+      // Conference might already exist, that's okay
+      if (response.status === 409) {
+        console.log(`Conference ${conferenceId} already exists`);
+        return { conferenceId };
+      }
+      throw new Error(`Failed to create conference: ${response.statusText}`);
+    }
+
+    console.log(`Created SMB conference: ${conferenceId}`);
+    return { conferenceId };
+  } catch (error) {
+    console.error(`Error creating conference ${conferenceId}:`, error.message);
+    // Don't fail the room creation if conference creation fails
+    return { conferenceId };
+  }
 }
 
 // Delete a conference
@@ -51,11 +76,9 @@ export async function getConference(conferenceId) {
 }
 
 // Generate WHIP endpoint URL for a participant to publish
-// The WHIP bridge uses plugin names, not dynamic room IDs
-// "sfu-broadcaster" is the standard plugin for SMB integration
-// TODO: For multi-room support, we may need separate WHIP bridge instances per room
+// Pass the conference ID so WHIP publishes to the correct conference
 export function getWhipEndpoint(conferenceId) {
-  return `${WHIP_URL}/api/v2/whip/sfu-broadcaster`;
+  return `${WHIP_URL}/api/v2/whip/sfu-broadcaster/${conferenceId}`;
 }
 
 // Generate WHEP endpoint URL for a participant to subscribe
@@ -66,9 +89,7 @@ export function getWhepEndpoint(conferenceId) {
 
 // Get signaling info for a room
 export async function getRoomSignaling(roomId, userId, isPublisher = false) {
-  // Conference should be created automatically when first participant joins
-  // No need to explicitly create it here
-
+  // Conference is created when room is created
   return {
     roomId,
     userId,
