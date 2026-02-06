@@ -44,38 +44,19 @@ export class RoomConnection {
     ) {
       console.log('[PUBLISH] Setting up publisher as', this.role);
       await this.setupPublisher(signaling.whipEndpoint, iceServers);
-
-      // Report channel ID to backend so other participants can subscribe
-      if (this.channelId) {
-        console.log('[PUBLISH] Channel ID extracted, reporting to backend:', this.channelId);
-        await this.reportChannelId(this.channelId);
-      } else {
-        console.error('[PUBLISH] ERROR: No channel ID after WHIP publish!');
-      }
+      console.log('[PUBLISH] Successfully published via WHIP');
     }
 
     // Only listeners subscribe via WHEP to receive audio
     // Speakers/hosts only publish via WHIP, they don't subscribe
-    // (In a multi-speaker scenario, each speaker would need to subscribe to OTHER speakers' channels)
-    if (this.role === 'listener') {
-      const channelId = this.channelId || signaling?.channelId;
-      console.log('[SUBSCRIBE] Attempting to subscribe as listener. channelId:', channelId);
-
-      if (channelId && this.whepBaseUrl) {
-        const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
-        console.log('[SUBSCRIBE] Using channel ID, setting up subscriber:', whepEndpoint);
-        await this.setupSubscriber(whepEndpoint, iceServers);
-      } else if (signaling?.channelId) {
-        // Fallback: use channelId from signaling if provided
-        const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
-        console.log('[SUBSCRIBE] Using signaling channelId:', signaling.channelId);
-        await this.setupSubscriber(whepEndpoint, iceServers);
-      } else {
-        console.log("[SUBSCRIBE] No channel ID available yet - polling for channel ID");
-        // Start polling for channel ID
-        this.startChannelIdPolling(iceServers);
-      }
-    } else {
+    // WHEP uses the room ID, not the WHIP channel ID
+    if (this.role === 'listener' && this.whepBaseUrl) {
+      // Use the room ID for WHEP (not the WHIP channel ID)
+      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${this.roomId}`;
+      console.log('[SUBSCRIBE] Setting up subscriber as listener for room:', this.roomId);
+      console.log('[SUBSCRIBE] WHEP endpoint:', whepEndpoint);
+      await this.setupSubscriber(whepEndpoint, iceServers);
+    } else if (this.role !== 'listener') {
       console.log('[SUBSCRIBE] Skipping subscription for role:', this.role, '(speakers only publish)');
     }
 
@@ -227,12 +208,6 @@ export class RoomConnection {
     this.whipResourceUrl = response.headers.get("Location") || whipEndpoint;
     console.log("WHIP resource URL:", this.whipResourceUrl);
 
-    // Extract channel ID from Location header
-    // Format: /api/v2/whip/sfu-broadcaster/{channelId}
-    const locationParts = this.whipResourceUrl.split("/");
-    this.channelId = locationParts[locationParts.length - 1];
-    console.log("Extracted channel ID:", this.channelId);
-
     // Get SDP answer
     const answerSdp = await response.text();
     const answer = new RTCSessionDescription({
@@ -263,9 +238,6 @@ export class RoomConnection {
 
       // Subscribe via WHEP
       await this.subscribeViaWhep(whepEndpoint);
-
-      // Mark as subscribed to prevent duplicate subscriptions
-      this.isSubscribed = true;
 
       console.log("WHEP subscriber connected");
     } catch (error) {
@@ -456,9 +428,6 @@ export class RoomConnection {
   }
 
   async disconnect() {
-    // Stop channel ID polling if active
-    this.stopChannelIdPolling();
-
     // Stop local stream
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
@@ -503,9 +472,6 @@ export class RoomConnection {
 
     // Clear remote streams
     this.remoteStreams.clear();
-
-    // Reset subscribed flag
-    this.isSubscribed = false;
   }
 }
 
