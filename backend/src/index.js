@@ -38,7 +38,7 @@ const WHIP_DOMAIN = process.env.WHIP_URL
 
 const WHEP_DOMAIN = process.env.WHEP_URL
   ? new URL(process.env.WHEP_URL).origin
-  : 'https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io';
+  : 'https://team2-vcegress2.eyevinn-wrtc-egress.auto.prod.osaas.io';
 
 const SMB_DOMAIN = process.env.SMB_URL
   ? new URL(process.env.SMB_URL).origin
