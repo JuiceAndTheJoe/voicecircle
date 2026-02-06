@@ -34,7 +34,7 @@ const S3_DOMAIN = process.env.S3_ENDPOINT
 // WebRTC gateway domains for CSP
 const WHIP_DOMAIN = process.env.WHIP_URL
   ? new URL(process.env.WHIP_URL).origin
-  : 'https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io';
+  : 'https://team2-vcwhip2.eyevinn-smb-whip-bridge.auto.prod.osaas.io';
 
 const WHEP_DOMAIN = process.env.WHEP_URL
   ? new URL(process.env.WHEP_URL).origin
@@ -42,7 +42,7 @@ const WHEP_DOMAIN = process.env.WHEP_URL
 
 const SMB_DOMAIN = process.env.SMB_URL
   ? new URL(process.env.SMB_URL).origin
-  : 'https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io';
+  : 'https://team2-vcsmb2.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io';
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
