@@ -31,6 +31,19 @@ const S3_DOMAIN = process.env.S3_ENDPOINT
   ? new URL(process.env.S3_ENDPOINT).host
   : 'team2-voicecirclestore.minio-minio.auto.prod.osaas.io';
 
+// WebRTC gateway domains for CSP
+const WHIP_DOMAIN = process.env.WHIP_URL
+  ? new URL(process.env.WHIP_URL).origin
+  : 'https://team2-vcwhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io';
+
+const WHEP_DOMAIN = process.env.WHEP_URL
+  ? new URL(process.env.WHEP_URL).origin
+  : 'https://team2-vcegress.eyevinn-wrtc-egress.auto.prod.osaas.io';
+
+const SMB_DOMAIN = process.env.SMB_URL
+  ? new URL(process.env.SMB_URL).origin
+  : 'https://team2-vcsmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io';
+
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
   contentSecurityPolicy: {
@@ -40,7 +53,7 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'"],
       imgSrc: ["'self'", "data:", "blob:", `https://${S3_DOMAIN}`],
       mediaSrc: ["'self'", "blob:", `https://${S3_DOMAIN}`],
-      connectSrc: ["'self'", `https://${S3_DOMAIN}`],
+      connectSrc: ["'self'", `https://${S3_DOMAIN}`, WHIP_DOMAIN, WHEP_DOMAIN, SMB_DOMAIN],
     },
   },
 }));

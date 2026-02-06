@@ -42,26 +42,34 @@ export class RoomConnection {
       (this.role === "host" || this.role === "speaker") &&
       signaling?.whipEndpoint
     ) {
+      console.log('[PUBLISH] Setting up publisher as', this.role);
       await this.setupPublisher(signaling.whipEndpoint, iceServers);
 
       // Report channel ID to backend so other participants can subscribe
       if (this.channelId) {
+        console.log('[PUBLISH] Channel ID extracted, reporting to backend:', this.channelId);
         await this.reportChannelId(this.channelId);
+      } else {
+        console.error('[PUBLISH] ERROR: No channel ID after WHIP publish!');
       }
     }
 
     // All participants subscribe via WHEP to receive audio
     // Need to get the channel ID first (either from our own publish or from backend)
     const channelId = this.channelId || signaling?.channelId;
+    console.log('[SUBSCRIBE] Attempting to subscribe. channelId:', channelId, 'role:', this.role);
+
     if (channelId && this.whepBaseUrl) {
       const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
+      console.log('[SUBSCRIBE] Using channel ID, setting up subscriber:', whepEndpoint);
       await this.setupSubscriber(whepEndpoint, iceServers);
     } else if (signaling?.channelId) {
       // Fallback: use channelId from signaling if provided
       const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${signaling.channelId}`;
+      console.log('[SUBSCRIBE] Using signaling channelId:', signaling.channelId);
       await this.setupSubscriber(whepEndpoint, iceServers);
     } else {
-      console.log("No channel ID available yet - polling for channel ID");
+      console.log("[SUBSCRIBE] No channel ID available yet - polling for channel ID");
       // Start polling for channel ID
       this.startChannelIdPolling(iceServers);
     }
@@ -91,6 +99,7 @@ export class RoomConnection {
   }
 
   startChannelIdPolling(iceServers) {
+    console.log('[POLL] Starting channel ID polling...');
     // Poll every 500ms for the channel ID
     this.channelIdPollInterval = setInterval(async () => {
       try {
@@ -104,8 +113,9 @@ export class RoomConnection {
 
         if (response.ok) {
           const { channelId } = await response.json();
+          console.log('[POLL] Received response, channelId:', channelId, 'isSubscribed:', this.isSubscribed);
           if (channelId && !this.isSubscribed) {
-            console.log("Channel ID found via polling:", channelId);
+            console.log("[POLL] Channel ID found via polling:", channelId);
             this.channelId = channelId;
             this.stopChannelIdPolling();
 
@@ -113,16 +123,18 @@ export class RoomConnection {
             const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
             await this.setupSubscriber(whepEndpoint, iceServers);
           }
+        } else {
+          console.warn('[POLL] Failed to get channel ID:', response.status);
         }
       } catch (error) {
-        console.warn("Failed to poll for channel ID:", error);
+        console.warn("[POLL] Failed to poll for channel ID:", error);
       }
     }, 500);
 
     // Stop polling after 30 seconds to prevent infinite polling
     setTimeout(() => {
       if (this.channelIdPollInterval) {
-        console.log("Channel ID polling timeout - stopping");
+        console.log("[POLL] Channel ID polling timeout - stopping");
         this.stopChannelIdPolling();
       }
     }, 30000);
