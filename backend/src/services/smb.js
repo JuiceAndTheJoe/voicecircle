@@ -38,16 +38,13 @@ export async function createConference(conferenceId) {
     if (!response.ok) {
       // Conference might already exist, that's okay
       if (response.status === 409) {
-        console.log(`Conference ${conferenceId} already exists`);
         return { conferenceId };
       }
       throw new Error(`Failed to create conference: ${response.statusText}`);
     }
 
-    console.log(`Created SMB conference: ${conferenceId}`);
     return { conferenceId };
-  } catch (error) {
-    console.error(`Error creating conference ${conferenceId}:`, error.message);
+  } catch {
     // Don't fail the room creation if conference creation fails
     return { conferenceId };
   }

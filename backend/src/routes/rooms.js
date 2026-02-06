@@ -223,8 +223,8 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
 
       try {
         await smbService.deleteConference(room._id);
-      } catch (err) {
-        console.error("Failed to delete SMB conference:", err.message);
+      } catch {
+        // SMB cleanup is best-effort
       }
     }
 
@@ -357,39 +357,11 @@ router.post("/:id/end", authenticate, async (req, res, next) => {
 
     try {
       await smbService.deleteConference(room._id);
-    } catch (err) {
-      console.error("Failed to delete SMB conference:", err.message);
+    } catch {
+      // SMB cleanup is best-effort
     }
 
     res.json({ message: "Room ended successfully" });
-  } catch (error) {
-    next(error);
-  }
-});
-
-// Get WebRTC signaling info
-router.get("/:id/signaling", authenticate, async (req, res, next) => {
-  try {
-    const room = await getRoomById(req.params.id);
-    if (!room) {
-      return res.status(404).json({ error: "Room not found" });
-    }
-
-    const isSpeaker =
-      room.speakers?.includes(req.userId) || room.hostId === req.userId;
-    const signaling = await smbService.getRoomSignaling(
-      room._id,
-      req.userId,
-      isSpeaker,
-    );
-
-    // Add channel ID if available (for WHEP subscribers)
-    const channelId = await getRoomChannelId(room._id);
-    if (channelId) {
-      signaling.channelId = channelId;
-    }
-
-    res.json({ signaling });
   } catch (error) {
     next(error);
   }
@@ -418,7 +390,6 @@ router.post("/:id/channel", authenticate, async (req, res, next) => {
     }
 
     await setRoomChannelId(room._id, channelId);
-    console.log(`Channel ID set for room ${room._id}: ${channelId}`);
 
     res.json({ success: true });
   } catch (error) {

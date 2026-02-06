@@ -110,7 +110,6 @@ export const roomsApi = {
   promoteSpeaker: (roomId, userId) => api.post(`/rooms/${roomId}/speakers/${userId}`),
   demoteSpeaker: (roomId, userId) => api.delete(`/rooms/${roomId}/speakers/${userId}`),
   end: (id) => api.post(`/rooms/${id}/end`),
-  getSignaling: (id) => api.get(`/rooms/${id}/signaling`),
 };
 
 // Upload endpoint
