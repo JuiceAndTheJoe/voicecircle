@@ -98,7 +98,11 @@ export const createRoomRules = [
   body('enableVideo')
     .optional()
     .isBoolean()
-    .withMessage('enableVideo must be a boolean')
+    .withMessage('enableVideo must be a boolean'),
+  body('videoQuality')
+    .optional()
+    .isIn(['480p', '720p', '1080p'])
+    .withMessage('videoQuality must be 480p, 720p, or 1080p')
 ];
 
 // Comment validation rules

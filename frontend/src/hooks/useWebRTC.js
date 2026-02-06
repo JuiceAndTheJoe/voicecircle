@@ -1,17 +1,28 @@
 // WebRTC WHIP/WHEP handling for live rooms
 
+// Video quality presets
+const VIDEO_QUALITY = {
+  '480p':  { width: 854,  height: 480,  frameRate: 30 },
+  '720p':  { width: 1280, height: 720,  frameRate: 30 },
+  '1080p': { width: 1920, height: 1080, frameRate: 30 }
+};
+
 export class RoomConnection {
-  constructor(roomId, userId, role) {
+  constructor(roomId, userId, role, videoQuality = '720p') {
     this.roomId = roomId;
     this.userId = userId;
     this.role = role;
-    this.publisherPc = null; // For WHIP (sending audio)
-    this.subscriberPc = null; // For WHEP (receiving audio)
+    this.videoQuality = videoQuality;
+    this.publisherPc = null; // For WHIP (sending audio/video)
+    this.subscriberPc = null; // For WHEP (receiving audio/video)
     this.localStream = null;
     this.remoteStreams = new Map();
+    this.remoteVideoStream = null; // Remote video stream for UI
     this.isMuted = true;
+    this.isVideoEnabled = true; // Video is on by default for publishers
     this.onParticipantUpdate = null;
     this.onSpeakingChange = null;
+    this.onVideoTrack = null; // Callback when video track is received
     this.whipResourceUrl = null;
     this.whepResourceUrl = null;
     this.audioElements = new Map(); // Track audio elements for remote streams
@@ -36,6 +47,11 @@ export class RoomConnection {
     // Store WHEP base URL for constructing subscriber endpoint
     this.whepBaseUrl = signaling?.whepBaseUrl;
 
+    // Get video quality from signaling if not already set
+    if (signaling?.videoQuality) {
+      this.videoQuality = signaling.videoQuality;
+    }
+
     // If speaker/host, setup publishing via WHIP first
     // This creates the channel that subscribers will connect to
     if (
@@ -44,18 +60,33 @@ export class RoomConnection {
     ) {
       console.log('[PUBLISH] Setting up publisher as', this.role);
       await this.setupPublisher(signaling.whipEndpoint, iceServers);
+
+      // Report channel ID to backend so other participants can subscribe
+      if (this.channelId) {
+        console.log('[PUBLISH] Channel ID extracted, reporting to backend:', this.channelId);
+        await this.reportChannelId(this.channelId);
+      } else {
+        console.error('[PUBLISH] ERROR: No channel ID after WHIP publish!');
+      }
+
       console.log('[PUBLISH] Successfully published via WHIP');
     }
 
     // Only listeners subscribe via WHEP to receive audio
     // Speakers/hosts only publish via WHIP, they don't subscribe
-    // WHEP uses the room ID, not the WHIP channel ID
+    // WHEP uses the WHIP-generated channel ID
     if (this.role === 'listener' && this.whepBaseUrl) {
-      // Use the room ID for WHEP (not the WHIP channel ID)
-      const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${this.roomId}`;
-      console.log('[SUBSCRIBE] Setting up subscriber as listener for room:', this.roomId);
-      console.log('[SUBSCRIBE] WHEP endpoint:', whepEndpoint);
-      await this.setupSubscriber(whepEndpoint, iceServers);
+      // Get channel ID from signaling or poll for it
+      const channelId = signaling?.channelId;
+
+      if (channelId) {
+        const whepEndpoint = `${this.whepBaseUrl}/whep/channel/${channelId}`;
+        console.log('[SUBSCRIBE] Setting up subscriber with channel ID:', channelId);
+        await this.setupSubscriber(whepEndpoint, iceServers);
+      } else {
+        console.log('[SUBSCRIBE] No channel ID yet, starting polling...');
+        this.startChannelIdPolling(iceServers);
+      }
     } else if (this.role !== 'listener') {
       console.log('[SUBSCRIBE] Skipping subscription for role:', this.role, '(speakers only publish)');
     }
@@ -135,15 +166,27 @@ export class RoomConnection {
 
   async setupPublisher(whipEndpoint, iceServers) {
     try {
-      // Get local audio
+      // Get video constraints based on quality setting
+      const constraints = VIDEO_QUALITY[this.videoQuality] || VIDEO_QUALITY['720p'];
+
+      // Get local audio and video
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: false,
+        video: {
+          width: { ideal: constraints.width },
+          height: { ideal: constraints.height },
+          frameRate: { ideal: constraints.frameRate }
+        }
       });
 
-      // Mute by default
+      // Mute audio by default
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = false;
+      });
+
+      // Video is enabled by default
+      this.localStream.getVideoTracks().forEach((track) => {
+        track.enabled = this.isVideoEnabled;
       });
 
       // Create publisher peer connection
@@ -208,6 +251,12 @@ export class RoomConnection {
     this.whipResourceUrl = response.headers.get("Location") || whipEndpoint;
     console.log("WHIP resource URL:", this.whipResourceUrl);
 
+    // Extract channel ID from Location header
+    // Format: /api/v2/whip/sfu-broadcaster/{channelId}
+    const locationParts = this.whipResourceUrl.split("/");
+    this.channelId = locationParts[locationParts.length - 1];
+    console.log("Extracted channel ID:", this.channelId);
+
     // Get SDP answer
     const answerSdp = await response.text();
     const answer = new RTCSessionDescription({
@@ -226,18 +275,32 @@ export class RoomConnection {
       // Handle incoming tracks
       this.subscriberPc.ontrack = (event) => {
         console.log("Received remote track:", event.track.kind);
+        const track = event.track;
         const stream = event.streams[0];
-        if (stream && !this.remoteStreams.has(stream.id)) {
-          this.remoteStreams.set(stream.id, stream);
-          this.playRemoteAudio(stream);
-          if (this.onParticipantUpdate) {
-            this.onParticipantUpdate();
+
+        if (track.kind === 'video') {
+          // Store video stream for UI to display
+          this.remoteVideoStream = stream;
+          if (this.onVideoTrack) {
+            this.onVideoTrack(stream);
           }
+        } else if (track.kind === 'audio') {
+          if (stream && !this.remoteStreams.has(stream.id)) {
+            this.remoteStreams.set(stream.id, stream);
+            this.playRemoteAudio(stream);
+          }
+        }
+
+        if (this.onParticipantUpdate) {
+          this.onParticipantUpdate();
         }
       };
 
       // Subscribe via WHEP
       await this.subscribeViaWhep(whepEndpoint);
+
+      // Mark as subscribed to prevent duplicate subscriptions
+      this.isSubscribed = true;
 
       console.log("WHEP subscriber connected");
     } catch (error) {
@@ -427,7 +490,37 @@ export class RoomConnection {
     });
   }
 
+  toggleCamera() {
+    if (!this.localStream) return false;
+
+    this.isVideoEnabled = !this.isVideoEnabled;
+    this.localStream.getVideoTracks().forEach((track) => {
+      track.enabled = this.isVideoEnabled;
+    });
+    return this.isVideoEnabled;
+  }
+
+  setVideoEnabled(enabled) {
+    if (!this.localStream) return;
+
+    this.isVideoEnabled = enabled;
+    this.localStream.getVideoTracks().forEach((track) => {
+      track.enabled = enabled;
+    });
+  }
+
+  getLocalVideoStream() {
+    return this.localStream;
+  }
+
+  getRemoteVideoStream() {
+    return this.remoteVideoStream;
+  }
+
   async disconnect() {
+    // Stop channel ID polling if active
+    this.stopChannelIdPolling();
+
     // Stop local stream
     if (this.localStream) {
       this.localStream.getTracks().forEach((track) => track.stop());
@@ -472,9 +565,12 @@ export class RoomConnection {
 
     // Clear remote streams
     this.remoteStreams.clear();
+
+    // Reset subscribed flag
+    this.isSubscribed = false;
   }
 }
 
-export function createRoomConnection(roomId, userId, role) {
-  return new RoomConnection(roomId, userId, role);
+export function createRoomConnection(roomId, userId, role, videoQuality = '720p') {
+  return new RoomConnection(roomId, userId, role, videoQuality);
 }

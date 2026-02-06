@@ -4,9 +4,10 @@ import { roomsApi } from '../services/api.js';
 import { authState } from '../services/auth.js';
 import { Loading } from '../components/common/Loading.js';
 import { EmptyState } from '../components/common/EmptyState.js';
-import { SpeakerGrid } from '../components/rooms/SpeakerTile.js';
+import { SpeakerGrid, attachSpeakerVideoStream, updateSpeakerVideoFallback } from '../components/rooms/SpeakerTile.js';
 import { RoomControls, attachRoomControlsEvents } from '../components/rooms/RoomControls.js';
 import { ParticipantList, attachParticipantListEvents } from '../components/rooms/ParticipantList.js';
+import { VideoPlayer, attachVideoStream, updateVideoFallback } from '../components/rooms/VideoPlayer.js';
 import { createRoomConnection } from '../hooks/useWebRTC.js';
 import { showError, showSuccess } from '../components/common/Toast.js';
 import { openConfirmModal } from '../components/common/Modal.js';
@@ -49,22 +50,44 @@ export async function attachRoomPageEvents(container, { id }) {
     const isHost = fullRoom.hostId === authState.user?._id;
     const raisedHands = fullRoom.raisedHands || [];
 
-    // Setup WebRTC connection
-    roomConnection = createRoomConnection(id, authState.user._id, role);
+    // Get video quality from signaling
+    const videoQuality = signaling?.videoQuality || '720p';
+    const canPublish = role === 'host' || role === 'speaker';
+
+    // Setup WebRTC connection with video quality
+    roomConnection = createRoomConnection(id, authState.user._id, role, videoQuality);
     await roomConnection.connect(signaling);
 
-    // Render room UI
+    // Track video state
+    let isVideoOn = true;
+
+    // Render room UI with video layout
     content.innerHTML = `
-      <div class="room-view">
+      <div class="room-view video-room">
         <div class="room-main">
           <div class="room-info" style="margin-bottom: 1rem;">
             <h1 style="font-size: 1.5rem; margin-bottom: 0.25rem;">${escapeHtml(fullRoom.name)}</h1>
             ${fullRoom.description ? `<p style="color: var(--text-muted)">${escapeHtml(fullRoom.description)}</p>` : ''}
+            <span class="video-quality-badge">${videoQuality}</span>
           </div>
-          <div class="room-stage" id="roomStage">
-            ${SpeakerGrid(participants)}
+          <div class="video-stage" id="videoStage">
+            ${canPublish ? `
+              <div class="local-video-container">
+                ${VideoPlayer({ user: authState.user, isLocal: true, isVideoOff: false })}
+              </div>
+            ` : `
+              <div class="remote-video-container" id="remoteVideoContainer">
+                <div class="waiting-for-video">
+                  ${icon('video', 48)}
+                  <p>Waiting for video stream...</p>
+                </div>
+              </div>
+            `}
           </div>
-          ${RoomControls({ isMuted: true, role, isHost })}
+          <div class="room-stage" id="roomStage" style="display: none;">
+            ${SpeakerGrid(participants, { hasVideo: true })}
+          </div>
+          ${RoomControls({ isMuted: true, isVideoOn: true, role, isHost })}
         </div>
         <div class="room-sidebar">
           <div id="participantListContainer">
@@ -78,11 +101,47 @@ export async function attachRoomPageEvents(container, { id }) {
       </div>
     `;
 
+    // Attach local video stream for publishers
+    if (canPublish && roomConnection) {
+      const localStream = roomConnection.getLocalVideoStream();
+      if (localStream) {
+        attachVideoStream('localVideo', localStream);
+      }
+    }
+
+    // Handle incoming video track for listeners
+    if (!canPublish && roomConnection) {
+      roomConnection.onVideoTrack = (stream) => {
+        const remoteContainer = content.querySelector('#remoteVideoContainer');
+        if (remoteContainer) {
+          // Get the host user for display
+          const hostParticipant = participants.find(p => p.role === 'host');
+          const hostUser = hostParticipant?.user || { username: 'Host' };
+          remoteContainer.innerHTML = VideoPlayer({ user: hostUser, isLocal: false, isVideoOff: false });
+          attachVideoStream(`remoteVideo-${hostUser._id || 'unknown'}`, stream);
+        }
+      };
+
+      // Check if there's already a remote video stream
+      const existingStream = roomConnection.getRemoteVideoStream();
+      if (existingStream) {
+        roomConnection.onVideoTrack(existingStream);
+      }
+    }
+
     // Attach control events
     attachRoomControlsEvents(content, {
       onToggleMute: (muted) => {
         if (roomConnection) {
           roomConnection.setMuted(muted);
+        }
+      },
+      onToggleCamera: (enabled) => {
+        if (roomConnection) {
+          roomConnection.setVideoEnabled(enabled);
+          isVideoOn = enabled;
+          // Update local video fallback
+          updateVideoFallback('localVideo', !enabled);
         }
       },
       onRaiseHand: async () => {

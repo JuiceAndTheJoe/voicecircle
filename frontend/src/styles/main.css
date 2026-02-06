@@ -1348,3 +1348,193 @@ a.avatar-wrapper {
   padding-top: 1.5rem;
   border-top: 1px solid var(--border-color);
 }
+
+/* Video Room Styles */
+.video-room .room-main {
+  flex: 1;
+}
+
+.video-stage {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border-radius: var(--border-radius);
+  min-height: 400px;
+  overflow: hidden;
+}
+
+.local-video-container,
+.remote-video-container {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.video-player {
+  position: relative;
+  width: 100%;
+  max-width: 1280px;
+  aspect-ratio: 16 / 9;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  overflow: hidden;
+}
+
+.video-player.local {
+  border: 2px solid var(--primary);
+}
+
+.video-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.video-avatar-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.video-avatar-fallback.visible {
+  opacity: 1;
+}
+
+.video-overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.video-name {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: white;
+}
+
+.video-muted-indicator {
+  width: 8px;
+  height: 8px;
+  background: var(--danger);
+  border-radius: 50%;
+}
+
+.waiting-for-video {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--text-muted);
+  padding: 2rem;
+}
+
+.waiting-for-video svg {
+  opacity: 0.5;
+}
+
+.video-quality-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-tertiary);
+  color: var(--text-secondary);
+  border-radius: var(--border-radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-left: 0.5rem;
+}
+
+/* Speaker Tile with Video */
+.speaker-tile.has-video {
+  aspect-ratio: 16 / 9;
+}
+
+.speaker-video-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.speaker-video-container video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: var(--border-radius);
+}
+
+.speaker-video-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-tertiary);
+  border-radius: var(--border-radius);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.speaker-video-fallback.visible {
+  opacity: 1;
+}
+
+.speaker-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 0.5rem;
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.7));
+  border-radius: 0 0 var(--border-radius) var(--border-radius);
+  text-align: center;
+}
+
+.speaker-tile.has-video .speaker-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.speaker-tile:not(.has-video) .speaker-info {
+  position: static;
+  background: none;
+  padding: 0;
+}
+
+.speaker-video-off {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  color: var(--warning);
+}
+
+/* Video room responsive */
+@media (max-width: 768px) {
+  .video-stage {
+    min-height: 250px;
+  }
+
+  .video-player {
+    max-width: 100%;
+  }
+}

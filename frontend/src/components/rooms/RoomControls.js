@@ -2,7 +2,7 @@
 
 import { icon } from '../../utils/icons.js';
 
-export function RoomControls({ isMuted = true, role = 'listener', isHost = false }) {
+export function RoomControls({ isMuted = true, isVideoOn = true, role = 'listener', isHost = false }) {
   const canSpeak = role === 'host' || role === 'speaker';
 
   return `
@@ -10,6 +10,9 @@ export function RoomControls({ isMuted = true, role = 'listener', isHost = false
       ${canSpeak ? `
         <button class="control-btn ${isMuted ? 'muted' : ''}" id="muteBtn" title="${isMuted ? 'Unmute' : 'Mute'}">
           ${isMuted ? icon('micOff', 24) : icon('mic', 24)}
+        </button>
+        <button class="control-btn ${isVideoOn ? '' : 'muted'}" id="cameraBtn" title="${isVideoOn ? 'Turn off camera' : 'Turn on camera'}">
+          ${isVideoOn ? icon('video', 24) : icon('videoOff', 24)}
         </button>
       ` : `
         <button class="control-btn" id="raiseHandBtn" title="Raise hand">
@@ -30,6 +33,7 @@ export function RoomControls({ isMuted = true, role = 'listener', isHost = false
 
 export function attachRoomControlsEvents(container, handlers = {}) {
   const muteBtn = container.querySelector('#muteBtn');
+  const cameraBtn = container.querySelector('#cameraBtn');
   const raiseHandBtn = container.querySelector('#raiseHandBtn');
   const leaveRoomBtn = container.querySelector('#leaveRoomBtn');
   const endRoomBtn = container.querySelector('#endRoomBtn');
@@ -40,6 +44,15 @@ export function attachRoomControlsEvents(container, handlers = {}) {
       handlers.onToggleMute(!isMuted);
       muteBtn.classList.toggle('muted');
       muteBtn.innerHTML = isMuted ? icon('mic', 24) : icon('micOff', 24);
+    });
+  }
+
+  if (cameraBtn && handlers.onToggleCamera) {
+    cameraBtn.addEventListener('click', () => {
+      const isVideoOn = !cameraBtn.classList.contains('muted');
+      handlers.onToggleCamera(!isVideoOn);
+      cameraBtn.classList.toggle('muted');
+      cameraBtn.innerHTML = isVideoOn ? icon('videoOff', 24) : icon('video', 24);
     });
   }
 

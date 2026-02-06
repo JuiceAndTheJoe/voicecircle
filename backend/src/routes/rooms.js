@@ -106,7 +106,7 @@ router.post(
   validate,
   async (req, res, next) => {
     try {
-      const { name, description, isPrivate, enableVideo } = req.body;
+      const { name, description, isPrivate, enableVideo, videoQuality } = req.body;
 
       const roomId = uuidv4();
 
@@ -119,7 +119,8 @@ router.post(
         description: description || "",
         hostId: req.userId,
         isPrivate: isPrivate || false,
-        enableVideo: enableVideo || false,
+        enableVideo: enableVideo !== false,
+        videoQuality: videoQuality || "720p",
         isLive: true,
         speakers: [req.userId],
         raisedHands: [],
@@ -186,6 +187,9 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
     if (channelId) {
       signaling.channelId = channelId;
     }
+
+    // Add video quality setting
+    signaling.videoQuality = room.videoQuality || "720p";
 
     res.json({
       room,

@@ -76,9 +76,10 @@ export async function getConference(conferenceId) {
 }
 
 // Generate WHIP endpoint URL for a participant to publish
-// Pass the conference ID so WHIP publishes to the correct conference
+// The WHIP bridge uses a shared plugin endpoint, not per-room endpoints
+// It auto-generates a channel ID which becomes the conference identifier
 export function getWhipEndpoint(conferenceId) {
-  return `${WHIP_URL}/api/v2/whip/sfu-broadcaster/${conferenceId}`;
+  return `${WHIP_URL}/api/v2/whip/sfu-broadcaster`;
 }
 
 // Generate WHEP endpoint URL for a participant to subscribe

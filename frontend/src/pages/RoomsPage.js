@@ -16,7 +16,7 @@ export async function RoomsPage() {
       <div class="page-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
         <div>
           <h1>Live Rooms</h1>
-          <p style="color: var(--text-muted)">Join live audio conversations</p>
+          <p style="color: var(--text-muted)">Join live video conversations</p>
         </div>
         ${authState.isAuthenticated ? `
           <button class="btn btn-primary" id="createRoomBtn">
@@ -85,7 +85,7 @@ function openCreateRoomModal() {
     <div class="modal-overlay" id="createRoomModal">
       <div class="modal">
         <div class="modal-header">
-          <h2 class="modal-title">Start a Room</h2>
+          <h2 class="modal-title">Start a Video Room</h2>
           <button class="modal-close" id="closeCreateRoom">
             ${icon('x', 20)}
           </button>
@@ -100,12 +100,20 @@ function openCreateRoomModal() {
               <label class="form-label" for="roomDescription">Description (optional)</label>
               <textarea id="roomDescription" name="description" class="form-input" placeholder="Add more details about your room" rows="3" maxlength="500"></textarea>
             </div>
+            <div class="form-group">
+              <label class="form-label" for="videoQuality">Video Quality</label>
+              <select id="videoQuality" name="videoQuality" class="form-input">
+                <option value="480p">480p (Standard)</option>
+                <option value="720p" selected>720p (HD)</option>
+                <option value="1080p">1080p (Full HD)</option>
+              </select>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
           <button class="btn btn-secondary" id="cancelCreateRoom">Cancel</button>
           <button class="btn btn-primary" id="submitCreateRoom">
-            ${icon('radio', 16)} Go Live
+            ${icon('video', 16)} Go Live
           </button>
         </div>
       </div>
@@ -134,6 +142,7 @@ function openCreateRoomModal() {
   submitBtn.addEventListener('click', async () => {
     const name = form.roomName.value.trim();
     const description = form.roomDescription.value.trim();
+    const videoQuality = form.videoQuality.value;
 
     if (!name) {
       showError('Please enter a room name');
@@ -144,13 +153,13 @@ function openCreateRoomModal() {
       submitBtn.disabled = true;
       submitBtn.textContent = 'Creating...';
 
-      const { room } = await roomsApi.create({ name, description });
+      const { room } = await roomsApi.create({ name, description, videoQuality });
       close();
       navigate(`/rooms/${room._id}`);
     } catch (error) {
       showError(error.message || 'Failed to create room');
       submitBtn.disabled = false;
-      submitBtn.innerHTML = `${icon('radio', 16)} Go Live`;
+      submitBtn.innerHTML = `${icon('video', 16)} Go Live`;
     }
   });
 }
