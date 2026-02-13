@@ -1,7 +1,7 @@
 {
   "name": "voicecircle-backend",
   "version": "1.0.0",
-  "description": "VoiceCircle - Social Audio/Video Platform Backend",
+  "description": "VoiceCircle - Social Audio Platform Backend",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

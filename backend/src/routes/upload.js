@@ -4,7 +4,6 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   uploadAvatar,
   uploadVoiceMessage,
-  uploadVideoClip,
   getSignedUploadUrl,
   PREFIXES
 } from '../services/storage.js';
@@ -29,10 +28,7 @@ const upload = multer({
       'audio/ogg',
       'audio/mpeg',
       'audio/mp3',
-      'audio/wav',
-      'video/webm',
-      'video/mp4',
-      'video/quicktime'
+      'audio/wav'
     ];
 
     if (allowedTypes.includes(file.mimetype)) {
@@ -90,27 +86,6 @@ router.post('/voice', authenticate, upload.single('file'), async (req, res, next
   }
 });
 
-// Upload video clip
-router.post('/video', authenticate, upload.single('file'), async (req, res, next) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    const allowedTypes = ['video/webm', 'video/mp4', 'video/quicktime'];
-    if (!allowedTypes.includes(req.file.mimetype)) {
-      return res.status(400).json({ error: 'Invalid file type for video' });
-    }
-
-    const postId = uuidv4();
-    const url = await uploadVideoClip(postId, req.file.buffer, req.file.mimetype);
-
-    res.json({ url, postId });
-  } catch (error) {
-    next(error);
-  }
-});
-
 // Get pre-signed upload URL (for client-side uploads)
 router.post('/presigned-url', authenticate, async (req, res, next) => {
   try {
@@ -127,9 +102,6 @@ router.post('/presigned-url', authenticate, async (req, res, next) => {
         break;
       case 'voice':
         prefix = PREFIXES.VOICE_MESSAGES;
-        break;
-      case 'video':
-        prefix = PREFIXES.VIDEO_CLIPS;
         break;
       default:
         return res.status(400).json({ error: 'Invalid upload type' });

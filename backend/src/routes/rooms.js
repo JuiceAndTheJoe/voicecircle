@@ -113,7 +113,7 @@ router.post(
   validate,
   async (req, res, next) => {
     try {
-      const { name, description, isPrivate, enableVideo, videoQuality } = req.body;
+      const { name, description, isPrivate } = req.body;
 
       const roomId = uuidv4();
 
@@ -126,8 +126,6 @@ router.post(
         description: description || "",
         hostId: req.userId,
         isPrivate: isPrivate || false,
-        enableVideo: enableVideo !== false,
-        videoQuality: videoQuality || "720p",
         isLive: true,
         smbConferenceId,  // Store the SMB-generated conference ID
         speakers: [req.userId],
@@ -230,8 +228,7 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
       role,
       sdp: sdpOffer,
       iceServers,
-      sessionId: endpointId,
-      videoQuality: room.videoQuality || "720p"
+      sessionId: endpointId
     });
   } catch (error) {
     console.error('[JOIN] Error:', error);

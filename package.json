@@ -1,7 +1,7 @@
 {
   "name": "voicecircle",
   "version": "1.0.0",
-  "description": "VoiceCircle - Social Audio/Video Platform",
+  "description": "VoiceCircle - Social Audio Platform",
   "scripts": {
     "start": "cd backend && npm start",
     "postinstall": "cd backend && npm install && cd ../frontend && npm install && npm run build && mkdir -p ../backend/public && cp -r dist/* ../backend/public/"

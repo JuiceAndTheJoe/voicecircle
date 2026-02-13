@@ -1,7 +1,7 @@
 {
   "name": "voicecircle-frontend",
   "version": "1.0.0",
-  "description": "VoiceCircle - Social Audio/Video Platform Frontend",
+  "description": "VoiceCircle - Social Audio Platform Frontend",
   "type": "module",
   "scripts": {
     "dev": "vite",

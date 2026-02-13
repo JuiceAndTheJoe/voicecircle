@@ -130,9 +130,6 @@ export const uploadApi = {
       case 'voice':
         endpoint = '/upload/voice';
         break;
-      case 'video':
-        endpoint = '/upload/video';
-        break;
       case 'avatar':
       case 'image':
         endpoint = '/upload/avatar';

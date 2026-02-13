@@ -52,21 +52,6 @@ export async function requestMicrophoneAccess() {
   }
 }
 
-export async function requestCameraAccess(options = { video: true, audio: true }) {
-  try {
-    const stream = await navigator.mediaDevices.getUserMedia(options);
-    return { stream, error: null };
-  } catch (error) {
-    let message = 'Could not access camera';
-    if (error.name === 'NotAllowedError') {
-      message = 'Camera access was denied. Please allow camera access in your browser settings.';
-    } else if (error.name === 'NotFoundError') {
-      message = 'No camera found. Please connect a camera and try again.';
-    }
-    return { stream: null, error: message };
-  }
-}
-
 export function stopMediaStream(stream) {
   if (stream) {
     stream.getTracks().forEach(track => track.stop());

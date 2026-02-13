@@ -143,9 +143,9 @@ router.post('/', authenticate, createPostRules, validate, async (req, res, next)
   try {
     const { type, content, mediaUrl, mediaDuration } = req.body;
 
-    // Validate media URL for voice/video posts
-    if ((type === 'voice' || type === 'video') && !mediaUrl) {
-      return res.status(400).json({ error: 'Media URL required for voice/video posts' });
+    // Validate media URL for voice posts
+    if (type === 'voice' && !mediaUrl) {
+      return res.status(400).json({ error: 'Media URL required for voice posts' });
     }
 
     const post = await createPost({

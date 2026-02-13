@@ -63,7 +63,7 @@ export const updateProfileRules = [
 // Post validation rules
 export const createPostRules = [
   body('type')
-    .isIn(['voice', 'video', 'text'])
+    .isIn(['voice', 'text'])
     .withMessage('Invalid post type'),
   body('content')
     .optional()
@@ -94,15 +94,7 @@ export const createRoomRules = [
   body('isPrivate')
     .optional()
     .isBoolean()
-    .withMessage('isPrivate must be a boolean'),
-  body('enableVideo')
-    .optional()
-    .isBoolean()
-    .withMessage('enableVideo must be a boolean'),
-  body('videoQuality')
-    .optional()
-    .isIn(['480p', '720p', '1080p'])
-    .withMessage('videoQuality must be 480p, 720p, or 1080p')
+    .withMessage('isPrivate must be a boolean')
 ];
 
 // Comment validation rules
