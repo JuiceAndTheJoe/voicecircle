@@ -182,6 +182,9 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
     // Add participant to Redis
     await addRoomParticipant(room._id, req.userId, role);
 
+    // Ensure SMB conference exists (may have failed during room creation)
+    await smbService.createConference(room._id);
+
     // Create unique endpoint ID for this connection (must be <= 36 chars for SMB)
     const endpointId = uuidv4();
 
