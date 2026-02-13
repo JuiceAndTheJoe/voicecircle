@@ -117,8 +117,8 @@ router.post(
 
       const roomId = uuidv4();
 
-      // Create SMB conference with the room ID so WHEP subscribers can connect
-      await smbService.createConference(roomId);
+      // Create SMB conference - SMB generates its own conference ID
+      const { conferenceId: smbConferenceId } = await smbService.createConference();
 
       const room = await createRoom({
         _id: roomId,
@@ -129,6 +129,7 @@ router.post(
         enableVideo: enableVideo !== false,
         videoQuality: videoQuality || "720p",
         isLive: true,
+        smbConferenceId,  // Store the SMB-generated conference ID
         speakers: [req.userId],
         raisedHands: [],
         settings: {
@@ -182,16 +183,24 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
     // Add participant to Redis
     await addRoomParticipant(room._id, req.userId, role);
 
-    // Ensure SMB conference exists (may have failed during room creation)
-    await smbService.createConference(room._id);
+    // Get or create SMB conference ID
+    let smbConferenceId = room.smbConferenceId;
+    if (!smbConferenceId) {
+      // Room was created before migration - create conference now
+      console.log(`[JOIN] Room ${room._id} missing smbConferenceId, creating conference...`);
+      const { conferenceId } = await smbService.createConference();
+      smbConferenceId = conferenceId;
+      // Update room with the new conference ID
+      await updateRoom(room._id, { smbConferenceId });
+    }
 
     // Create unique endpoint ID for this connection (must be <= 36 chars for SMB)
     const endpointId = uuidv4();
 
     // Allocate SMB endpoint
-    console.log(`[JOIN] Allocating endpoint for user ${req.userId} in room ${room._id}`);
+    console.log(`[JOIN] Allocating endpoint for user ${req.userId} in conference ${smbConferenceId}`);
     const endpointDescription = await smbService.allocateEndpoint(
-      room._id,
+      smbConferenceId,
       endpointId,
       {
         audio: true,
@@ -257,7 +266,7 @@ router.post("/:id/answer", authenticate, async (req, res, next) => {
 
     // Configure SMB endpoint with client's parameters
     await smbService.configureEndpoint(
-      room._id,
+      room.smbConferenceId,
       session.endpointId,
       configuredEndpoint
     );
@@ -303,10 +312,10 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
 
     // Get session to cleanup SMB endpoint
     const session = await getRoomSession(room._id, req.userId);
-    if (session) {
+    if (session && room.smbConferenceId) {
       // Delete SMB endpoint
       try {
-        await smbService.deleteEndpoint(room._id, session.endpointId);
+        await smbService.deleteEndpoint(room.smbConferenceId, session.endpointId);
       } catch {
         // Best-effort cleanup
       }
@@ -327,10 +336,12 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
       await clearRoomParticipants(room._id);
       await clearAllRoomSessions(room._id);
 
-      try {
-        await smbService.deleteConference(room._id);
-      } catch {
-        // SMB cleanup is best-effort
+      if (room.smbConferenceId) {
+        try {
+          await smbService.deleteConference(room.smbConferenceId);
+        } catch {
+          // SMB cleanup is best-effort
+        }
       }
     }
 
@@ -462,10 +473,12 @@ router.post("/:id/end", authenticate, async (req, res, next) => {
     await clearRoomParticipants(room._id);
     await clearAllRoomSessions(room._id);
 
-    try {
-      await smbService.deleteConference(room._id);
-    } catch {
-      // SMB cleanup is best-effort
+    if (room.smbConferenceId) {
+      try {
+        await smbService.deleteConference(room.smbConferenceId);
+      } catch {
+        // SMB cleanup is best-effort
+      }
     }
 
     res.json({ message: "Room ended successfully" });

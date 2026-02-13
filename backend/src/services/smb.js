@@ -22,32 +22,28 @@ const TURN_USERNAME = process.env.TURN_USERNAME || OSC_DEFAULTS.TURN_USERNAME;
 const TURN_PASSWORD = process.env.TURN_PASSWORD || OSC_DEFAULTS.TURN_PASSWORD;
 
 // Create a new conference/room in SMB
-export async function createConference(conferenceId) {
-  try {
-    const response = await fetch(`${SMB_URL}/conferences`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${SMB_API_KEY}`,
-      },
-      body: JSON.stringify({
-        id: conferenceId,
-      }),
-    });
+// SMB generates its own conference IDs - we cannot specify them
+export async function createConference() {
+  const url = `${SMB_URL}/conferences/`;
+  console.log('[SMB] Creating conference:', url);
 
-    if (!response.ok) {
-      // Conference might already exist, that's okay
-      if (response.status === 409) {
-        return { conferenceId };
-      }
-      throw new Error(`Failed to create conference: ${response.statusText}`);
-    }
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SMB_API_KEY}`,
+    },
+    body: '{}',  // Empty body - SMB generates the ID
+  });
 
-    return { conferenceId };
-  } catch {
-    // Don't fail the room creation if conference creation fails
-    return { conferenceId };
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => '');
+    throw new Error(`Failed to create conference: ${response.status} ${response.statusText} - ${errorText}`);
   }
+
+  const data = await response.json();
+  console.log('[SMB] Conference created:', data.id);
+  return { conferenceId: data.id };
 }
 
 // Delete a conference
