@@ -181,32 +181,71 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
     // Add participant to Redis
     await addRoomParticipant(room._id, req.userId, role);
 
-    // Get or create SMB conference ID
+    // Get or create SMB conference ID with optimistic concurrency control
     let smbConferenceId = room.smbConferenceId;
     if (!smbConferenceId) {
       // Room was created before migration - create conference now
       console.log(`[JOIN] Room ${room._id} missing smbConferenceId, creating conference...`);
       const { conferenceId } = await smbService.createConference();
-      smbConferenceId = conferenceId;
-      // Update room with the new conference ID
-      await updateRoom(room._id, { smbConferenceId });
+
+      // Re-fetch room to check if another request already set smbConferenceId (race condition)
+      const updatedRoom = await getRoomById(room._id);
+      if (updatedRoom.smbConferenceId) {
+        // Another request already created a conference - use that one instead
+        console.log(`[JOIN] Race condition detected: using existing conference ${updatedRoom.smbConferenceId} instead of ${conferenceId}`);
+        smbConferenceId = updatedRoom.smbConferenceId;
+        // Clean up the orphaned conference we just created
+        try {
+          await smbService.deleteConference(conferenceId);
+        } catch (cleanupErr) {
+          console.warn(`[JOIN] Failed to cleanup orphaned conference ${conferenceId}:`, cleanupErr.message);
+        }
+      } else {
+        // We won the race - use our conference
+        smbConferenceId = conferenceId;
+        await updateRoom(room._id, { smbConferenceId });
+      }
     }
 
     // Create unique endpoint ID for this connection (must be <= 36 chars for SMB)
     const endpointId = uuidv4();
 
-    // Allocate SMB endpoint
+    // Allocate SMB endpoint with retry on 404 (conference may have expired on SMB side)
     console.log(`[JOIN] Allocating endpoint for user ${req.userId} in conference ${smbConferenceId}`);
-    const endpointDescription = await smbService.allocateEndpoint(
-      smbConferenceId,
-      endpointId,
-      {
-        audio: true,
-        data: true,
-        relayType: 'ssrc-rewrite',
-        idleTimeout: 300 // 5 minutes
+    let endpointDescription;
+    try {
+      endpointDescription = await smbService.allocateEndpoint(
+        smbConferenceId,
+        endpointId,
+        {
+          audio: true,
+          data: true,
+          relayType: 'ssrc-rewrite',
+          idleTimeout: 300 // 5 minutes
+        }
+      );
+    } catch (allocError) {
+      // If conference not found (404), it may have expired on SMB - recreate it
+      if (allocError.message.includes('404')) {
+        console.log(`[JOIN] Conference ${smbConferenceId} not found on SMB, recreating...`);
+        const { conferenceId: newConferenceId } = await smbService.createConference();
+        smbConferenceId = newConferenceId;
+        await updateRoom(room._id, { smbConferenceId });
+        // Retry allocation with new conference
+        endpointDescription = await smbService.allocateEndpoint(
+          smbConferenceId,
+          endpointId,
+          {
+            audio: true,
+            data: true,
+            relayType: 'ssrc-rewrite',
+            idleTimeout: 300
+          }
+        );
+      } else {
+        throw allocError;
       }
-    );
+    }
 
     // Generate SDP offer from endpoint description
     const sdpOffer = createSdpOffer(endpointDescription, endpointId);
