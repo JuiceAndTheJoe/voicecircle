@@ -103,7 +103,12 @@ export const roomsApi = {
   getAll: () => api.get('/rooms'),
   getById: (id) => api.get(`/rooms/${id}`),
   create: (data) => api.post('/rooms', data),
+  // join now returns SDP offer for direct SMB connection
   join: (id) => api.post(`/rooms/${id}/join`),
+  // NEW: Submit SDP answer to configure SMB endpoint
+  submitAnswer: (id, sdpAnswer) => api.post(`/rooms/${id}/answer`, { sdpAnswer }),
+  // NEW: Heartbeat to keep session alive
+  heartbeat: (id) => api.post(`/rooms/${id}/heartbeat`),
   leave: (id) => api.post(`/rooms/${id}/leave`),
   raiseHand: (id) => api.post(`/rooms/${id}/raise-hand`),
   lowerHand: (id) => api.post(`/rooms/${id}/lower-hand`),

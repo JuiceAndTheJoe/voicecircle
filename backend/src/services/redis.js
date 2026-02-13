@@ -12,6 +12,7 @@ const KEYS = {
   USER_ONLINE: 'user:online:',
   ROOM_PARTICIPANTS: 'room:participants:',
   ROOM_CHANNEL: 'room:channel:',
+  ROOM_SESSION: 'room:session:', // NEW: WebRTC session tracking
   ACTIVE_ROOMS: 'active_rooms',
   USER_SESSION: 'user:session:',
   NOTIFICATIONS: 'notifications:'
@@ -20,7 +21,8 @@ const KEYS = {
 // TTL values (in seconds)
 const TTL = {
   USER_ONLINE: 300, // 5 minutes
-  SESSION: 86400 * 7 // 7 days
+  SESSION: 86400 * 7, // 7 days
+  ROOM_SESSION: 3600 // 1 hour for WebRTC sessions
 };
 
 export async function initializeRedis() {
@@ -207,6 +209,102 @@ export async function getNotifications(userId, limit = 20) {
 export async function clearNotifications(userId) {
   const key = `${KEYS.NOTIFICATIONS}${userId}`;
   await redis.del(key);
+}
+
+// ============================================================
+// Room Session Tracking (for direct SMB WebRTC connections)
+// ============================================================
+
+/**
+ * Store WebRTC session data for a user in a room
+ * @param {string} roomId - Room identifier
+ * @param {string} userId - User identifier
+ * @param {object} sessionData - Session data to store
+ * @param {string} sessionData.endpointId - SMB endpoint identifier
+ * @param {object} sessionData.endpointDescription - SMB endpoint description
+ * @param {number} sessionData.joinedAt - Timestamp when user joined
+ */
+export async function setRoomSession(roomId, userId, sessionData) {
+  const key = `${KEYS.ROOM_SESSION}${roomId}:${userId}`;
+  const data = {
+    ...sessionData,
+    lastSeen: Date.now()
+  };
+  await redis.setex(key, TTL.ROOM_SESSION, JSON.stringify(data));
+}
+
+/**
+ * Get WebRTC session data for a user in a room
+ * @param {string} roomId - Room identifier
+ * @param {string} userId - User identifier
+ * @returns {Promise<object|null>} Session data or null if not found
+ */
+export async function getRoomSession(roomId, userId) {
+  const key = `${KEYS.ROOM_SESSION}${roomId}:${userId}`;
+  const data = await redis.get(key);
+  return data ? JSON.parse(data) : null;
+}
+
+/**
+ * Delete WebRTC session data for a user
+ * @param {string} roomId - Room identifier
+ * @param {string} userId - User identifier
+ */
+export async function deleteRoomSession(roomId, userId) {
+  const key = `${KEYS.ROOM_SESSION}${roomId}:${userId}`;
+  await redis.del(key);
+}
+
+/**
+ * Update the lastSeen timestamp for a session (heartbeat)
+ * @param {string} roomId - Room identifier
+ * @param {string} userId - User identifier
+ * @returns {Promise<boolean>} True if session exists and was updated
+ */
+export async function updateSessionLastSeen(roomId, userId) {
+  const key = `${KEYS.ROOM_SESSION}${roomId}:${userId}`;
+  const data = await redis.get(key);
+
+  if (!data) {
+    return false;
+  }
+
+  const session = JSON.parse(data);
+  session.lastSeen = Date.now();
+  await redis.setex(key, TTL.ROOM_SESSION, JSON.stringify(session));
+  return true;
+}
+
+/**
+ * Get all sessions for a room
+ * @param {string} roomId - Room identifier
+ * @returns {Promise<Array>} Array of session data objects
+ */
+export async function getAllRoomSessions(roomId) {
+  const pattern = `${KEYS.ROOM_SESSION}${roomId}:*`;
+  const keys = await redis.keys(pattern);
+
+  if (keys.length === 0) {
+    return [];
+  }
+
+  const sessions = await redis.mget(keys);
+  return sessions
+    .filter(s => s !== null)
+    .map(s => JSON.parse(s));
+}
+
+/**
+ * Clear all sessions for a room
+ * @param {string} roomId - Room identifier
+ */
+export async function clearAllRoomSessions(roomId) {
+  const pattern = `${KEYS.ROOM_SESSION}${roomId}:*`;
+  const keys = await redis.keys(pattern);
+
+  if (keys.length > 0) {
+    await redis.del(...keys);
+  }
 }
 
 // Pub/Sub for real-time updates

@@ -58,10 +58,15 @@ Redis:    redis://172.232.131.169:10522
 MinIO S3: https://team2-voicecirclestore.minio-minio.auto.prod.osaas.io
           voicecircleadmin / VoiceCircle2026!
 
-SMB:      https://team2-voicecirclesmb.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io
-WHIP:     https://team2-voicecirclewhip.eyevinn-smb-whip-bridge.auto.prod.osaas.io
-WHEP:     https://team2-voicecirclewhep.eyevinn-wrtc-egress.auto.prod.osaas.io
+SMB:      https://team2-vcsmb2.eyevinn-docker-wrtc-sfu.auto.prod.osaas.io
+WHIP:     https://team2-vcwhip2.eyevinn-smb-whip-bridge.auto.prod.osaas.io
+WHEP:     https://team2-vcegress2.eyevinn-wrtc-egress.auto.prod.osaas.io
+TURN:     team2-vcturn.srperens-uturn.auto.prod.osaas.io:3478
+          voicecircle / voicecircle2024
 SMB Key:  voicecircle-api-key-2024
+
+WEBRTC STATUS (2026-02-11): BROKEN - See SMB_analysis.txt for details
+  WHIP bridge has upstream library bug preventing publishing
 
 API ROUTES
 ----------
@@ -78,7 +83,7 @@ FEATURES
 --------
 - User auth, profiles, follow system
 - Audio/video post recording & playback
-- Live WebRTC rooms via Symphony Media Bridge
+- Live WebRTC rooms via Symphony Media Bridge (CURRENTLY BROKEN - upstream bug)
 - Redis-based participant tracking
 - File upload (avatars, voice messages, video) to MinIO
 - Social feed, user search
@@ -96,3 +101,147 @@ COUCHDB_URL, COUCHDB_USER, COUCHDB_PASSWORD
 REDIS_URL
 S3_ENDPOINT, S3_ACCESS_KEY, S3_SECRET_KEY, S3_REGION, S3_BUCKET
 SMB_URL, SMB_API_KEY, WHIP_URL, WHEP_URL
+
+================================================================================
+WEBRTC, WHIP/WHEP & SYMPHONY MEDIA BRIDGE - CONCEPTUAL OVERVIEW
+================================================================================
+
+WHAT IS WEBRTC?
+---------------
+WebRTC (Web Real-Time Communication) is a set of protocols and APIs enabling
+peer-to-peer audio, video, and data communication directly in browsers.
+
+Key Components:
+  ICE   - NAT traversal, finds network paths between peers
+  DTLS  - Encryption key exchange for secure media
+  SRTP  - Encrypted media transport (audio/video packets)
+  SDP   - Session Description Protocol, negotiates codecs and streams
+  SCTP  - Data channels for arbitrary data (chat, file transfer)
+
+Why SFUs Exist:
+  Direct peer-to-peer doesn't scale. With N participants, you'd need N×(N-1)
+  connections. An SFU (Selective Forwarding Unit) acts as a central hub -
+  each participant connects once, the SFU forwards streams intelligently.
+
+WHAT IS SYMPHONY MEDIA BRIDGE (SMB)?
+------------------------------------
+SMB is an open-source, high-performance media server written in C++ by FINOS.
+It handles real-time audio, video, and screen sharing in conference systems.
+
+Architecture: HYBRID SFU/MCU
+  - Video: Forwarded without transcoding (pure SFU - low latency)
+  - Audio: Can be forwarded OR mixed into single stream (MCU when requested)
+
+Key Capabilities:
+  - Supports VP8, H.264 video codecs and Opus audio
+  - Video simulcast (multiple quality levels, adaptive forwarding)
+  - Dominant speaker detection
+  - Bandwidth estimation for quality adaptation
+  - Barbell connections for multi-region scaling (link SMB instances)
+  - Wait-free concurrent architecture for high performance
+
+SMB Core API:
+  POST   /conferences/                        - Create conference
+  POST   /conferences/{id}/{endpoint}         - Allocate endpoint (returns SDP)
+  PUT    /conferences/{id}/{endpoint}         - Configure endpoint (send SDP answer)
+  DELETE /conferences/{id}/{endpoint}         - Remove participant
+  GET    /conferences                         - List conferences
+  GET    /stats                               - CPU, bitrate, memory metrics
+
+WHAT ARE WHIP AND WHEP?
+-----------------------
+Standardized HTTP-based protocols for WebRTC signaling (IETF standards).
+
+WHIP (WebRTC-HTTP Ingestion Protocol):
+  Purpose: SEND/PUBLISH media TO a server
+  Flow:    1. Client sends SDP offer via HTTP POST
+           2. Server returns SDP answer
+           3. ICE/DTLS handshake completes
+           4. Media flows: Client -> Server
+  Use:     Broadcaster pushing a live stream
+
+WHEP (WebRTC-HTTP Egress Protocol):
+  Purpose: RECEIVE/SUBSCRIBE to media FROM a server
+  Flow:    1. Client sends SDP offer via HTTP POST
+           2. Server returns SDP answer
+           3. ICE/DTLS handshake completes
+           4. Media flows: Server -> Client
+  Use:     Viewer watching a live stream
+
+Why WHIP/WHEP Matter:
+  Before these protocols, every WebRTC service had proprietary signaling.
+  WHIP/WHEP create a standard HTTP-based approach, making WebRTC streaming
+  interoperable like RTMP was for traditional streaming.
+
+HOW LIVESTREAMING WORKS THROUGH SMB (VoiceCircle Architecture)
+---------------------------------------------------------------
+VoiceCircle uses BRIDGE SERVICES that abstract SMB complexity:
+
+  ┌─────────────────┐     WHIP      ┌──────────────────┐              ┌─────────────┐
+  │  Broadcaster    │──────────────>│  SMB-WHIP-Bridge │──HTTP API──>│     SMB     │
+  │  (Browser)      │               │  (Node.js)       │              │   (SFU)     │
+  └─────────────────┘               └──────────────────┘              └──────┬──────┘
+                                                                             │
+                                                                    Forwards streams
+                                                                             │
+  ┌─────────────────┐     WHEP      ┌──────────────────┐              ┌──────v──────┐
+  │    Viewer       │<─────────────│   WRTC-Egress    │<─HTTP API───│     SMB      │
+  │  (Browser)      │              │   (Node.js)      │              │   (SFU)      │
+  └─────────────────┘              └──────────────────┘              └──────────────┘
+
+Publishing Flow (Host via WHIP):
+  1. Browser: getUserMedia() -> get audio/video
+  2. Browser: Create RTCPeerConnection with ICE/TURN servers
+  3. Browser: Add tracks, create SDP offer
+  4. Browser: POST offer to WHIP endpoint /api/v2/whip/sfu-broadcaster
+  5. WHIP Bridge: Allocates conference + endpoint in SMB
+  6. WHIP Bridge: Returns SDP answer + channelId in Location header
+  7. Browser: ICE/DTLS handshake completes
+  8. Media flows: Browser -> WHIP Bridge -> SMB
+
+Subscribing Flow (Viewer via WHEP):
+  1. Browser: Get channelId from backend
+  2. Browser: Create RTCPeerConnection
+  3. Browser: POST SDP offer to WHEP /whep/channel/{channelId}
+  4. WHEP Egress: Creates subscriber endpoint in SMB
+  5. WHEP Egress: Returns SDP answer
+  6. Browser: ICE/DTLS handshake completes
+  7. Media flows: SMB -> WHEP Egress -> Browser
+
+SERVICES IN USE (VoiceCircle on OSC)
+------------------------------------
+1. SMB (eyevinn-docker-wrtc-sfu)    - The actual SFU, handles media routing
+2. WHIP Bridge (eyevinn-smb-whip-bridge) - Ingress gateway, WHIP -> SMB API
+3. WHEP Egress (eyevinn-wrtc-egress)     - Egress gateway, SMB API -> WHEP
+4. TURN Server (srperens-uturn)          - NAT traversal relay
+
+CRITICAL CONFIGURATION:
+  WHIP Bridge MUST have WhepEndpointUrl configured to register channels
+  with WHEP Egress. Without this, published streams are invisible to viewers.
+
+ALTERNATIVE: DIRECT SMB INTEGRATION
+-----------------------------------
+Instead of WHIP/WHEP bridges, applications can call SMB API directly:
+  - More control (custom SSRC assignment, multi-speaker routing)
+  - More complex (manual SDP generation, endpoint lifecycle management)
+  - Example: Eyevinn Intercom-Manager uses this approach
+
+Comparison:
+  WHIP/WHEP Bridges              Direct SMB Integration
+  ────────────────────           ──────────────────────
+  Simple setup                   Complex setup
+  Standard protocols             Custom signaling
+  Less control                   Fine-grained control
+  Bridge handles SDP             Manual SDP handling
+  Easier debugging               Harder debugging
+
+REFERENCES
+----------
+- SMB GitHub: https://github.com/finos/SymphonyMediaBridge
+- SMB WHIP Bridge: https://github.com/Eyevinn/smb-whip-bridge
+- WRTC Egress: https://github.com/Eyevinn/wrtc-egress
+- WHIP Spec: https://datatracker.ietf.org/doc/draft-ietf-wish-whip/
+- WHEP Spec: https://datatracker.ietf.org/doc/draft-ietf-wish-whep/
+
+For VoiceCircle-specific implementation details and current bugs, see:
+  smb_analysis.txt

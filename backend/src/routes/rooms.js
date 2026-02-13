@@ -17,8 +17,15 @@ import {
   getActiveRooms,
   setRoomChannelId,
   getRoomChannelId,
+  // New session tracking functions
+  setRoomSession,
+  getRoomSession,
+  deleteRoomSession,
+  updateSessionLastSeen,
+  clearAllRoomSessions,
 } from "../services/redis.js";
 import smbService from "../services/smb.js";
+import { createSdpOffer, parseAnswerForConfiguration } from "../services/connection.js";
 import { authenticate } from "../middleware/auth.js";
 import { validate, createRoomRules } from "../middleware/validation.js";
 
@@ -155,7 +162,7 @@ router.post(
   },
 );
 
-// Join room
+// Join room - Now returns SDP offer for direct SMB connection
 router.post("/:id/join", authenticate, async (req, res, next) => {
   try {
     const room = await getRoomById(req.params.id);
@@ -175,27 +182,109 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
     // Add participant to Redis
     await addRoomParticipant(room._id, req.userId, role);
 
-    // Get signaling info
-    const signaling = await smbService.getRoomSignaling(
+    // Create unique endpoint ID for this connection
+    const endpointId = `${room._id}-${req.userId}-${Date.now()}`;
+
+    // Allocate SMB endpoint
+    console.log(`[JOIN] Allocating endpoint for user ${req.userId} in room ${room._id}`);
+    const endpointDescription = await smbService.allocateEndpoint(
       room._id,
-      req.userId,
-      role === "host" || role === "speaker",
+      endpointId,
+      {
+        audio: true,
+        data: true,
+        relayType: 'ssrc-rewrite',
+        idleTimeout: 300 // 5 minutes
+      }
     );
 
-    // Add channel ID if available (for WHEP subscribers)
-    const channelId = await getRoomChannelId(room._id);
-    if (channelId) {
-      signaling.channelId = channelId;
-    }
+    // Generate SDP offer from endpoint description
+    const sdpOffer = createSdpOffer(endpointDescription, endpointId);
 
-    // Add video quality setting
-    signaling.videoQuality = room.videoQuality || "720p";
+    // Store session in Redis for answer handling
+    await setRoomSession(room._id, req.userId, {
+      endpointId,
+      endpointDescription,
+      joinedAt: Date.now()
+    });
+
+    // Get ICE servers for client
+    const iceServers = smbService.getIceServers();
+
+    console.log(`[JOIN] User ${req.userId} joined room ${room._id} as ${role}`);
 
     res.json({
       room,
       role,
-      signaling,
+      sdp: sdpOffer,
+      iceServers,
+      sessionId: endpointId,
+      videoQuality: room.videoQuality || "720p"
     });
+  } catch (error) {
+    console.error('[JOIN] Error:', error);
+    next(error);
+  }
+});
+
+// Submit SDP answer - Configure SMB endpoint with client's ICE/DTLS parameters
+router.post("/:id/answer", authenticate, async (req, res, next) => {
+  try {
+    const room = await getRoomById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    const { sdpAnswer } = req.body;
+    if (!sdpAnswer) {
+      return res.status(400).json({ error: "sdpAnswer is required" });
+    }
+
+    // Get session from Redis
+    const session = await getRoomSession(room._id, req.userId);
+    if (!session) {
+      return res.status(400).json({ error: "No active session found. Please join the room first." });
+    }
+
+    // Parse SDP answer to extract ICE/DTLS parameters
+    const configuredEndpoint = parseAnswerForConfiguration(
+      sdpAnswer,
+      session.endpointDescription
+    );
+
+    // Configure SMB endpoint with client's parameters
+    await smbService.configureEndpoint(
+      room._id,
+      session.endpointId,
+      configuredEndpoint
+    );
+
+    // Update session with configured state
+    await setRoomSession(room._id, req.userId, {
+      ...session,
+      configured: true,
+      configuredAt: Date.now()
+    });
+
+    console.log(`[ANSWER] Configured endpoint for user ${req.userId} in room ${room._id}`);
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('[ANSWER] Error:', error);
+    next(error);
+  }
+});
+
+// Heartbeat - Keep session alive
+router.post("/:id/heartbeat", authenticate, async (req, res, next) => {
+  try {
+    const updated = await updateSessionLastSeen(req.params.id, req.userId);
+
+    if (!updated) {
+      return res.status(404).json({ error: "No active session found" });
+    }
+
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
@@ -209,6 +298,19 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
       return res.status(404).json({ error: "Room not found" });
     }
 
+    // Get session to cleanup SMB endpoint
+    const session = await getRoomSession(room._id, req.userId);
+    if (session) {
+      // Delete SMB endpoint
+      try {
+        await smbService.deleteEndpoint(room._id, session.endpointId);
+      } catch {
+        // Best-effort cleanup
+      }
+      // Delete session from Redis
+      await deleteRoomSession(room._id, req.userId);
+    }
+
     await removeRoomParticipant(room._id, req.userId);
 
     // If host leaves, end the room
@@ -220,6 +322,7 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
       });
 
       await clearRoomParticipants(room._id);
+      await clearAllRoomSessions(room._id);
 
       try {
         await smbService.deleteConference(room._id);
@@ -354,6 +457,7 @@ router.post("/:id/end", authenticate, async (req, res, next) => {
     });
 
     await clearRoomParticipants(room._id);
+    await clearAllRoomSessions(room._id);
 
     try {
       await smbService.deleteConference(room._id);

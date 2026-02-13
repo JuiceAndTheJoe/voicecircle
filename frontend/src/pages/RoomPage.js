@@ -31,8 +31,9 @@ export async function attachRoomPageEvents(container, { id }) {
   if (!content) return;
 
   try {
-    // Join the room
-    const { room, role, signaling } = await roomsApi.join(id);
+    // Join the room - now returns SDP offer directly
+    const joinResponse = await roomsApi.join(id);
+    const { room, role, sdp, iceServers, sessionId, videoQuality } = joinResponse;
 
     if (!room.isLive) {
       content.innerHTML = EmptyState({
@@ -50,12 +51,17 @@ export async function attachRoomPageEvents(container, { id }) {
     const isHost = fullRoom.hostId === authState.user?._id;
     const raisedHands = fullRoom.raisedHands || [];
 
-    // Get video quality from signaling
-    const videoQuality = signaling?.videoQuality || '720p';
+    // Build signaling object for RoomConnection
+    const signaling = {
+      sdp,
+      iceServers,
+      sessionId,
+      videoQuality: videoQuality || '720p'
+    };
     const canPublish = role === 'host' || role === 'speaker';
 
     // Setup WebRTC connection with video quality
-    roomConnection = createRoomConnection(id, authState.user._id, role, videoQuality);
+    roomConnection = createRoomConnection(id, authState.user._id, role, signaling.videoQuality);
     await roomConnection.connect(signaling);
 
     // Track video state
