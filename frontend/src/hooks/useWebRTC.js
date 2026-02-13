@@ -1,31 +1,28 @@
 // WebRTC handling for live rooms - Direct SMB integration
-// Replaces WHIP/WHEP bridges with direct SDP exchange
+// Audio-only with Push-to-Talk (PTT) like YourVoice
 
-// Video quality presets
-const VIDEO_QUALITY = {
-  '480p':  { width: 854,  height: 480,  frameRate: 30 },
-  '720p':  { width: 1280, height: 720,  frameRate: 30 },
-  '1080p': { width: 1920, height: 1080, frameRate: 30 }
-};
+// PTT Configuration
+const PTT_MIN_HOLD_MS = 300; // Minimum hold duration before audio transmits
 
 export class RoomConnection {
-  constructor(roomId, userId, role, videoQuality = '720p') {
+  constructor(roomId, userId, role) {
     this.roomId = roomId;
     this.userId = userId;
     this.role = role;
-    this.videoQuality = videoQuality;
     this.pc = null; // Single peer connection for both send/receive
     this.localStream = null;
     this.remoteStreams = new Map();
-    this.remoteVideoStream = null;
-    this.isMuted = true;
-    this.isVideoEnabled = true;
+    this.isMuted = true; // Audio always starts muted (PTT)
+    this.isTalking = false; // PTT state
+    this.pttTimeout = null; // For 300ms minimum hold
     this.onParticipantUpdate = null;
     this.onSpeakingChange = null;
-    this.onVideoTrack = null;
+    this.onTalkingStateChange = null; // Callback for PTT UI updates
     this.audioElements = new Map();
     this.heartbeatInterval = null;
     this.sessionId = null;
+    this.audioContext = null;
+    this.analyser = null;
   }
 
   /**
@@ -34,15 +31,9 @@ export class RoomConnection {
    * @param {string} signaling.sdp - SDP offer from server
    * @param {array} signaling.iceServers - ICE servers for RTCPeerConnection
    * @param {string} signaling.sessionId - Session identifier
-   * @param {string} signaling.videoQuality - Video quality setting
    */
   async connect(signaling) {
-    console.log('[CONNECT] Starting connection with direct SMB integration');
-
-    // Get video quality from signaling if provided
-    if (signaling?.videoQuality) {
-      this.videoQuality = signaling.videoQuality;
-    }
+    console.log('[CONNECT] Starting audio-only connection with PTT');
 
     // Store session ID
     this.sessionId = signaling?.sessionId;
@@ -76,7 +67,7 @@ export class RoomConnection {
       console.log('[ICE] Connection state:', this.pc.iceConnectionState);
     };
 
-    // Get local media for speakers/hosts
+    // Get local audio for speakers/hosts (audio only, no video)
     if (this.role === 'host' || this.role === 'speaker') {
       await this.setupLocalMedia();
     }
@@ -111,38 +102,28 @@ export class RoomConnection {
     // Start heartbeat to keep session alive
     this.startHeartbeat();
 
-    console.log('[CONNECT] Connection established successfully');
+    console.log('[CONNECT] Audio connection established successfully');
     return true;
   }
 
   /**
-   * Setup local media (audio and optionally video)
+   * Setup local media (audio only - no video)
    */
   async setupLocalMedia() {
     try {
-      const constraints = VIDEO_QUALITY[this.videoQuality] || VIDEO_QUALITY['720p'];
-
-      // Request audio and video
+      // Request audio only - no video
       this.localStream = await navigator.mediaDevices.getUserMedia({
         audio: true,
-        video: {
-          width: { ideal: constraints.width },
-          height: { ideal: constraints.height },
-          frameRate: { ideal: constraints.frameRate }
-        }
+        video: false
       });
 
-      // Mute audio by default
+      // Audio starts DISABLED (muted) - PTT requires user to hold button
       this.localStream.getAudioTracks().forEach((track) => {
         track.enabled = false;
       });
+      this.isMuted = true;
 
-      // Video is enabled by default
-      this.localStream.getVideoTracks().forEach((track) => {
-        track.enabled = this.isVideoEnabled;
-      });
-
-      // Add local tracks to peer connection
+      // Add local audio track to peer connection
       this.localStream.getTracks().forEach((track) => {
         console.log('[MEDIA] Adding local track:', track.kind);
         this.pc.addTrack(track, this.localStream);
@@ -151,7 +132,7 @@ export class RoomConnection {
       // Setup audio level detection for speaking indicator
       this.setupAudioLevelDetection();
 
-      console.log('[MEDIA] Local media setup complete');
+      console.log('[MEDIA] Audio-only media setup complete (PTT mode)');
     } catch (error) {
       console.error('[MEDIA] Failed to get user media:', error);
       throw error;
@@ -159,18 +140,13 @@ export class RoomConnection {
   }
 
   /**
-   * Handle incoming remote tracks
+   * Handle incoming remote tracks (audio only)
    */
   handleRemoteTrack(event) {
     const track = event.track;
     const stream = event.streams[0];
 
-    if (track.kind === 'video') {
-      this.remoteVideoStream = stream;
-      if (this.onVideoTrack) {
-        this.onVideoTrack(stream);
-      }
-    } else if (track.kind === 'audio') {
+    if (track.kind === 'audio') {
       if (stream && !this.remoteStreams.has(stream.id)) {
         this.remoteStreams.set(stream.id, stream);
         this.playRemoteAudio(stream);
@@ -293,21 +269,23 @@ export class RoomConnection {
   setupAudioLevelDetection() {
     if (!this.localStream) return;
 
-    const audioContext = new AudioContext();
-    const source = audioContext.createMediaStreamSource(this.localStream);
-    const analyser = audioContext.createAnalyser();
-    analyser.fftSize = 256;
+    this.audioContext = new AudioContext();
+    const source = this.audioContext.createMediaStreamSource(this.localStream);
+    this.analyser = this.audioContext.createAnalyser();
+    this.analyser.fftSize = 256;
 
-    source.connect(analyser);
+    source.connect(this.analyser);
 
-    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
 
     const checkLevel = () => {
       if (!this.localStream) return;
 
-      analyser.getByteFrequencyData(dataArray);
+      this.analyser.getByteFrequencyData(dataArray);
       const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-      const isSpeaking = average > 30 && !this.isMuted;
+
+      // Only show speaking indicator when PTT is active and there's audio
+      const isSpeaking = average > 30 && this.isTalking;
 
       if (this.onSpeakingChange) {
         this.onSpeakingChange(this.userId, isSpeaking);
@@ -319,71 +297,113 @@ export class RoomConnection {
     checkLevel();
   }
 
-  /**
-   * Toggle audio mute
-   */
-  toggleMute() {
-    if (!this.localStream) return false;
+  // ============================================================
+  // Push-to-Talk (PTT) Methods
+  // ============================================================
 
-    this.isMuted = !this.isMuted;
+  /**
+   * Start PTT - called on pointer/touch down or key down
+   * Uses 300ms delay like YourVoice to prevent accidental taps
+   */
+  startPTT() {
+    if (!this.localStream || this.isTalking) return;
+
+    // Clear any existing timeout
+    if (this.pttTimeout) {
+      clearTimeout(this.pttTimeout);
+    }
+
+    // Start 300ms timer before actually enabling audio
+    this.pttTimeout = setTimeout(() => {
+      this.enableAudio();
+    }, PTT_MIN_HOLD_MS);
+
+    console.log('[PTT] Starting (300ms hold required)');
+  }
+
+  /**
+   * Stop PTT - called on pointer/touch up or key up
+   */
+  stopPTT() {
+    // Clear the timeout if released before 300ms
+    if (this.pttTimeout) {
+      clearTimeout(this.pttTimeout);
+      this.pttTimeout = null;
+    }
+
+    // Disable audio if it was enabled
+    if (this.isTalking) {
+      this.disableAudio();
+    }
+
+    console.log('[PTT] Stopped');
+  }
+
+  /**
+   * Enable audio transmission (internal - called after 300ms hold)
+   */
+  enableAudio() {
+    if (!this.localStream) return;
+
+    this.isTalking = true;
+    this.isMuted = false;
 
     this.localStream.getAudioTracks().forEach((track) => {
-      track.enabled = !this.isMuted;
+      track.enabled = true;
     });
 
+    // Notify UI of state change
+    if (this.onTalkingStateChange) {
+      this.onTalkingStateChange(true);
+    }
+
+    console.log('[PTT] Audio ENABLED - transmitting');
+  }
+
+  /**
+   * Disable audio transmission
+   */
+  disableAudio() {
+    if (!this.localStream) return;
+
+    this.isTalking = false;
+    this.isMuted = true;
+
+    this.localStream.getAudioTracks().forEach((track) => {
+      track.enabled = false;
+    });
+
+    // Notify UI of state change
+    if (this.onTalkingStateChange) {
+      this.onTalkingStateChange(false);
+    }
+
+    console.log('[PTT] Audio DISABLED');
+  }
+
+  /**
+   * Get current PTT/talking state
+   */
+  getTalkingState() {
+    return this.isTalking;
+  }
+
+  /**
+   * Legacy mute methods (for compatibility) - now just wraps PTT
+   */
+  toggleMute() {
+    // In PTT mode, this doesn't make sense - use startPTT/stopPTT instead
+    console.warn('[MUTE] Use PTT controls instead of toggleMute in PTT mode');
     return this.isMuted;
   }
 
-  /**
-   * Set mute state
-   */
   setMuted(muted) {
-    if (!this.localStream) return;
-
-    this.isMuted = muted;
-
-    this.localStream.getAudioTracks().forEach((track) => {
-      track.enabled = !muted;
-    });
-  }
-
-  /**
-   * Toggle camera
-   */
-  toggleCamera() {
-    if (!this.localStream) return false;
-
-    this.isVideoEnabled = !this.isVideoEnabled;
-    this.localStream.getVideoTracks().forEach((track) => {
-      track.enabled = this.isVideoEnabled;
-    });
-    return this.isVideoEnabled;
-  }
-
-  /**
-   * Set video enabled state
-   */
-  setVideoEnabled(enabled) {
-    if (!this.localStream) return;
-
-    this.isVideoEnabled = enabled;
-    this.localStream.getVideoTracks().forEach((track) => {
-      track.enabled = enabled;
-    });
-  }
-
-  /**
-   * Get local video stream
-   */
-  getLocalVideoStream() {
-    return this.localStream;
-  }
-
-  /**
-   * Get remote video stream
-   */
-  getRemoteVideoStream() {
-    return this.remoteVideoStream;
+    // In PTT mode, mute is controlled by PTT button
+    if (muted) {
+      this.disableAudio();
+    } else {
+      this.enableAudio();
+    }
   }
 
   /**
@@ -392,10 +412,19 @@ export class RoomConnection {
   async disconnect() {
     console.log('[DISCONNECT] Cleaning up connection');
 
+    // Stop PTT if active
+    this.stopPTT();
+
     // Stop heartbeat
     if (this.heartbeatInterval) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
+    }
+
+    // Close audio context
+    if (this.audioContext) {
+      this.audioContext.close();
+      this.audioContext = null;
     }
 
     // Stop local stream
@@ -420,15 +449,14 @@ export class RoomConnection {
 
     // Clear remote streams
     this.remoteStreams.clear();
-    this.remoteVideoStream = null;
 
     console.log('[DISCONNECT] Cleanup complete');
   }
 }
 
 /**
- * Create a new room connection
+ * Create a new room connection (audio-only PTT)
  */
-export function createRoomConnection(roomId, userId, role, videoQuality = '720p') {
-  return new RoomConnection(roomId, userId, role, videoQuality);
+export function createRoomConnection(roomId, userId, role) {
+  return new RoomConnection(roomId, userId, role);
 }
