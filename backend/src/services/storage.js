@@ -6,6 +6,7 @@ import {
   HeadBucketCommand,
   CreateBucketCommand,
   ListObjectsV2Command,
+  PutBucketPolicyCommand,
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
@@ -24,7 +25,6 @@ const BUCKET = process.env.S3_BUCKET || "voicecircle";
 export const PREFIXES = {
   AVATARS: "avatars/",
   VOICE_MESSAGES: "voice-messages/",
-  VIDEO_CLIPS: "video-clips/",
 };
 
 export async function initializeStorage() {
@@ -57,6 +57,36 @@ export async function initializeStorage() {
       }
     }
   }
+
+  // Set bucket policy to allow public read access for avatars
+  await setAvatarsPublicPolicy();
+}
+
+async function setAvatarsPublicPolicy() {
+  const policy = {
+    Version: "2012-10-17",
+    Statement: [
+      {
+        Sid: "PublicReadAvatars",
+        Effect: "Allow",
+        Principal: "*",
+        Action: ["s3:GetObject"],
+        Resource: [`arn:aws:s3:::${BUCKET}/${PREFIXES.AVATARS}*`],
+      },
+    ],
+  };
+
+  try {
+    await s3Client.send(
+      new PutBucketPolicyCommand({
+        Bucket: BUCKET,
+        Policy: JSON.stringify(policy),
+      })
+    );
+    console.log(`  Bucket policy set: avatars folder is publicly readable`);
+  } catch (error) {
+    console.log(`  Bucket policy note: ${error.message}`);
+  }
 }
 
 export async function uploadFile(key, body, contentType) {
@@ -78,8 +108,8 @@ export async function uploadAvatar(userId, buffer, contentType) {
   // Upload the file
   await uploadFile(key, buffer, contentType);
 
-  // Return signed URL for secure access (expires in 7 days)
-  return getSignedDownloadUrl(key, 7 * 24 * 60 * 60);
+  // Return public URL (no expiration)
+  return getPublicUrl(key);
 }
 
 export async function uploadVoiceMessage(postId, buffer, contentType) {
@@ -96,12 +126,6 @@ export async function uploadVoiceMessage(postId, buffer, contentType) {
   // Return signed URL for secure access (expires in 7 days)
   // Signed URL is essential for voice messages to work properly
   return getSignedDownloadUrl(key, 7 * 24 * 60 * 60);
-}
-
-export async function uploadVideoClip(postId, buffer, contentType) {
-  const extension = contentType.includes("webm") ? "webm" : "mp4";
-  const key = `${PREFIXES.VIDEO_CLIPS}${postId}.${extension}`;
-  return uploadFile(key, buffer, contentType);
 }
 
 export async function getFile(key) {
