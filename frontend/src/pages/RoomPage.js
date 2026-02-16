@@ -13,6 +13,7 @@ import { navigate } from '../router.js';
 import { icon } from '../utils/icons.js';
 
 let roomConnection = null;
+let sseUnsubscribe = null;
 
 export async function RoomPage({ id }) {
   return `
@@ -208,6 +209,32 @@ export async function attachRoomPageEvents(container, { id }) {
       };
     }
 
+    // Subscribe to SSE events for real-time updates
+    sseUnsubscribe = roomsApi.subscribeToEvents(id, async (event) => {
+      // Skip our own events to avoid redundant updates
+      if (event.userId === authState.user?._id && event.type !== 'room_ended') {
+        return;
+      }
+
+      switch (event.type) {
+        case 'participant_joined':
+        case 'participant_left':
+        case 'hand_raised':
+        case 'hand_lowered':
+        case 'speaker_promoted':
+        case 'speaker_demoted':
+          // Refresh participant list
+          await refreshParticipantList(id, content, isHost);
+          break;
+        case 'room_ended':
+          // Cleanup and navigate away
+          cleanupRoomPage(content);
+          showError('Room has ended');
+          navigate('/rooms');
+          break;
+      }
+    });
+
   } catch (error) {
     showError(error.message || 'Failed to join room');
     content.innerHTML = EmptyState({
@@ -261,15 +288,73 @@ function updatePTTStatusIndicator(container, isTalking) {
   }
 }
 
+// Refresh participant list from server
+async function refreshParticipantList(roomId, container, isHost) {
+  try {
+    const { room: updatedRoom } = await roomsApi.getById(roomId);
+    const participants = updatedRoom.participants || [];
+    const raisedHands = updatedRoom.raisedHands || [];
+
+    // Update participant list in sidebar
+    const participantContainer = container.querySelector('#participantListContainer');
+    if (participantContainer) {
+      participantContainer.innerHTML = ParticipantList({
+        participants,
+        isHost,
+        raisedHands: participants.filter(p => raisedHands.includes(p.userId))
+      });
+      // Re-attach participant list events
+      attachParticipantListEvents(participantContainer, {
+        onPromote: async (userId) => {
+          try {
+            await roomsApi.promoteSpeaker(roomId, userId);
+            showSuccess('User promoted to speaker');
+          } catch (error) {
+            showError(error.message);
+          }
+        }
+      });
+    }
+
+    // Update speakers area
+    const speakersArea = container.querySelector('.speakers-area');
+    if (speakersArea) {
+      speakersArea.innerHTML = renderSpeakersList(
+        participants.filter(p => p.role === 'host' || p.role === 'speaker')
+      );
+    }
+
+    // Update participant count
+    const countEl = container.querySelector('.participant-count');
+    if (countEl) {
+      countEl.textContent = `${participants.length} ${participants.length === 1 ? 'participant' : 'participants'}`;
+    }
+  } catch (error) {
+    console.error('Failed to refresh participant list:', error);
+  }
+}
+
+// Cleanup room page resources
+function cleanupRoomPage(container) {
+  // Cleanup keyboard listeners
+  cleanupRoomControls(container);
+
+  // Close SSE connection
+  if (sseUnsubscribe) {
+    sseUnsubscribe();
+    sseUnsubscribe = null;
+  }
+
+  // Disconnect WebRTC
+  if (roomConnection) {
+    roomConnection.disconnect();
+    roomConnection = null;
+  }
+}
+
 async function leaveRoom(roomId, container) {
   try {
-    // Cleanup keyboard listeners
-    cleanupRoomControls(container);
-
-    if (roomConnection) {
-      await roomConnection.disconnect();
-      roomConnection = null;
-    }
+    cleanupRoomPage(container);
     await roomsApi.leave(roomId);
     navigate('/rooms');
   } catch (error) {
@@ -279,13 +364,7 @@ async function leaveRoom(roomId, container) {
 
 async function endRoom(roomId, container) {
   try {
-    // Cleanup keyboard listeners
-    cleanupRoomControls(container);
-
-    if (roomConnection) {
-      await roomConnection.disconnect();
-      roomConnection = null;
-    }
+    cleanupRoomPage(container);
     await roomsApi.end(roomId);
     navigate('/rooms');
     showSuccess('Room ended');
@@ -302,8 +381,14 @@ function escapeHtml(text) {
 
 // Cleanup when leaving page
 window.addEventListener('hashchange', () => {
-  if (roomConnection && !window.location.hash.includes('/rooms/')) {
-    roomConnection.disconnect();
-    roomConnection = null;
+  if (!window.location.hash.includes('/rooms/')) {
+    if (sseUnsubscribe) {
+      sseUnsubscribe();
+      sseUnsubscribe = null;
+    }
+    if (roomConnection) {
+      roomConnection.disconnect();
+      roomConnection = null;
+    }
   }
 });

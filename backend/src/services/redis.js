@@ -316,4 +316,89 @@ export async function publish(channel, message) {
   await redis.publish(channel, JSON.stringify(message));
 }
 
+// ============================================================
+// SSE Room Events System
+// ============================================================
+
+// Event types for room updates
+export const ROOM_EVENTS = {
+  PARTICIPANT_JOINED: 'participant_joined',
+  PARTICIPANT_LEFT: 'participant_left',
+  HAND_RAISED: 'hand_raised',
+  HAND_LOWERED: 'hand_lowered',
+  SPEAKER_PROMOTED: 'speaker_promoted',
+  SPEAKER_DEMOTED: 'speaker_demoted',
+  ROOM_ENDED: 'room_ended'
+};
+
+// In-memory SSE connections: Map<roomId, Set<Response>>
+const roomConnections = new Map();
+
+/**
+ * Add an SSE connection for a room
+ * @param {string} roomId - Room identifier
+ * @param {object} res - Express response object
+ */
+export function addRoomConnection(roomId, res) {
+  if (!roomConnections.has(roomId)) {
+    roomConnections.set(roomId, new Set());
+  }
+  roomConnections.get(roomId).add(res);
+}
+
+/**
+ * Remove an SSE connection for a room
+ * @param {string} roomId - Room identifier
+ * @param {object} res - Express response object
+ */
+export function removeRoomConnection(roomId, res) {
+  const connections = roomConnections.get(roomId);
+  if (connections) {
+    connections.delete(res);
+    if (connections.size === 0) {
+      roomConnections.delete(roomId);
+    }
+  }
+}
+
+/**
+ * Broadcast an event to all SSE connections for a room
+ * @param {string} roomId - Room identifier
+ * @param {string} eventType - Event type from ROOM_EVENTS
+ * @param {object} data - Event payload data
+ */
+export function broadcastToRoom(roomId, eventType, data) {
+  const connections = roomConnections.get(roomId);
+  if (!connections || connections.size === 0) {
+    return;
+  }
+
+  const payload = JSON.stringify({
+    type: eventType,
+    ...data,
+    timestamp: Date.now()
+  });
+
+  const message = `data: ${payload}\n\n`;
+
+  for (const res of connections) {
+    try {
+      res.write(message);
+    } catch (err) {
+      // Connection likely closed, remove it
+      connections.delete(res);
+    }
+  }
+}
+
+/**
+ * Get the number of SSE connections for a room
+ * @param {string} roomId - Room identifier
+ * @returns {number} Number of active connections
+ */
+export function getRoomConnectionCount(roomId) {
+  const connections = roomConnections.get(roomId);
+  return connections ? connections.size : 0;
+}
+
 export { redis, KEYS };

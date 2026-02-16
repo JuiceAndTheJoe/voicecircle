@@ -23,10 +23,15 @@ import {
   deleteRoomSession,
   updateSessionLastSeen,
   clearAllRoomSessions,
+  // SSE broadcasting
+  ROOM_EVENTS,
+  addRoomConnection,
+  removeRoomConnection,
+  broadcastToRoom,
 } from "../services/redis.js";
 import smbService from "../services/smb.js";
 import { createSdpOffer, parseAnswerForConfiguration } from "../services/connection.js";
-import { authenticate } from "../middleware/auth.js";
+import { authenticate, verifyToken } from "../middleware/auth.js";
 import { validate, createRoomRules } from "../middleware/validation.js";
 
 const router = Router();
@@ -100,6 +105,69 @@ router.get("/:id", async (req, res, next) => {
         participants: participantUsers,
       },
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// SSE endpoint for real-time room events
+router.get("/:id/events", async (req, res, next) => {
+  try {
+    // Authenticate via query param (EventSource doesn't support headers)
+    const token = req.query.token;
+    if (!token) {
+      return res.status(401).json({ error: "No token provided" });
+    }
+
+    let decoded;
+    try {
+      decoded = verifyToken(token);
+    } catch (err) {
+      return res.status(401).json({ error: "Invalid token" });
+    }
+
+    const userId = decoded.userId;
+
+    // Verify room exists
+    const room = await getRoomById(req.params.id);
+    if (!room) {
+      return res.status(404).json({ error: "Room not found" });
+    }
+
+    // Set SSE headers
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "X-Accel-Buffering": "no", // Disable nginx buffering
+    });
+
+    // Send initial connection message
+    res.write(`data: ${JSON.stringify({ type: "connected", userId, timestamp: Date.now() })}\n\n`);
+
+    // Add connection to room
+    addRoomConnection(room._id, res);
+
+    // Send keepalive ping every 30 seconds
+    const keepaliveInterval = setInterval(() => {
+      try {
+        res.write(`: keepalive\n\n`);
+      } catch {
+        clearInterval(keepaliveInterval);
+      }
+    }, 30000);
+
+    // Cleanup on close
+    req.on("close", () => {
+      clearInterval(keepaliveInterval);
+      removeRoomConnection(room._id, res);
+    });
+
+    req.on("error", () => {
+      clearInterval(keepaliveInterval);
+      removeRoomConnection(room._id, res);
+    });
+
   } catch (error) {
     next(error);
   }
@@ -262,6 +330,13 @@ router.post("/:id/join", authenticate, async (req, res, next) => {
 
     console.log(`[JOIN] User ${req.userId} joined room ${room._id} as ${role}`);
 
+    // Broadcast participant joined event
+    broadcastToRoom(room._id, ROOM_EVENTS.PARTICIPANT_JOINED, {
+      userId: req.userId,
+      user: { username: req.user.username, avatar: req.user.avatar },
+      role
+    });
+
     res.json({
       room,
       role,
@@ -361,12 +436,23 @@ router.post("/:id/leave", authenticate, async (req, res, next) => {
 
     await removeRoomParticipant(room._id, req.userId);
 
+    // Broadcast participant left event
+    broadcastToRoom(room._id, ROOM_EVENTS.PARTICIPANT_LEFT, {
+      userId: req.userId,
+      user: { username: req.user.username }
+    });
+
     // If host leaves, end the room
     if (room.hostId === req.userId) {
       await updateRoom(room._id, {
         isLive: false,
         endedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
+      });
+
+      // Broadcast room ended event before clearing participants
+      broadcastToRoom(room._id, ROOM_EVENTS.ROOM_ENDED, {
+        reason: "host_left"
       });
 
       await clearRoomParticipants(room._id);
@@ -401,6 +487,12 @@ router.post("/:id/raise-hand", authenticate, async (req, res, next) => {
         raisedHands: [...raisedHands, req.userId],
         updatedAt: new Date().toISOString(),
       });
+
+      // Broadcast hand raised event
+      broadcastToRoom(room._id, ROOM_EVENTS.HAND_RAISED, {
+        userId: req.userId,
+        user: { username: req.user.username, avatar: req.user.avatar }
+      });
     }
 
     res.json({ message: "Hand raised" });
@@ -420,6 +512,12 @@ router.post("/:id/lower-hand", authenticate, async (req, res, next) => {
     await updateRoom(room._id, {
       raisedHands: (room.raisedHands || []).filter((id) => id !== req.userId),
       updatedAt: new Date().toISOString(),
+    });
+
+    // Broadcast hand lowered event
+    broadcastToRoom(room._id, ROOM_EVENTS.HAND_LOWERED, {
+      userId: req.userId,
+      user: { username: req.user.username }
     });
 
     res.json({ message: "Hand lowered" });
@@ -453,6 +551,16 @@ router.post("/:id/speakers/:userId", authenticate, async (req, res, next) => {
       });
 
       await updateParticipantRole(room._id, targetUserId, "speaker");
+
+      // Get promoted user's info for broadcast
+      const promotedUser = await getUserById(targetUserId);
+
+      // Broadcast speaker promoted event
+      broadcastToRoom(room._id, ROOM_EVENTS.SPEAKER_PROMOTED, {
+        userId: targetUserId,
+        user: promotedUser ? { username: promotedUser.username, avatar: promotedUser.avatar } : null,
+        promotedBy: req.userId
+      });
     }
 
     res.json({ message: "User promoted to speaker" });
@@ -482,6 +590,16 @@ router.delete("/:id/speakers/:userId", authenticate, async (req, res, next) => {
 
     await updateParticipantRole(room._id, targetUserId, "listener");
 
+    // Get demoted user's info for broadcast
+    const demotedUser = await getUserById(targetUserId);
+
+    // Broadcast speaker demoted event
+    broadcastToRoom(room._id, ROOM_EVENTS.SPEAKER_DEMOTED, {
+      userId: targetUserId,
+      user: demotedUser ? { username: demotedUser.username } : null,
+      demotedBy: req.userId
+    });
+
     res.json({ message: "User demoted to listener" });
   } catch (error) {
     next(error);
@@ -504,6 +622,12 @@ router.post("/:id/end", authenticate, async (req, res, next) => {
       isLive: false,
       endedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+    });
+
+    // Broadcast room ended event before clearing participants
+    broadcastToRoom(room._id, ROOM_EVENTS.ROOM_ENDED, {
+      reason: "host_ended",
+      endedBy: req.userId
     });
 
     await clearRoomParticipants(room._id);

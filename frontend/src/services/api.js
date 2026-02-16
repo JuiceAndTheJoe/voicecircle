@@ -115,6 +115,35 @@ export const roomsApi = {
   promoteSpeaker: (roomId, userId) => api.post(`/rooms/${roomId}/speakers/${userId}`),
   demoteSpeaker: (roomId, userId) => api.delete(`/rooms/${roomId}/speakers/${userId}`),
   end: (id) => api.post(`/rooms/${id}/end`),
+  // SSE subscription for real-time room events
+  subscribeToEvents: (roomId, onEvent) => {
+    const token = getAuthToken();
+    if (!token) {
+      console.error('No auth token for SSE subscription');
+      return () => {};
+    }
+
+    const eventSource = new EventSource(`${API_BASE}/rooms/${roomId}/events?token=${token}`);
+
+    eventSource.onmessage = (e) => {
+      try {
+        const event = JSON.parse(e.data);
+        onEvent(event);
+      } catch (err) {
+        console.error('Failed to parse SSE event:', err);
+      }
+    };
+
+    eventSource.onerror = (err) => {
+      console.error('SSE connection error:', err);
+      // EventSource will automatically try to reconnect
+    };
+
+    // Return cleanup function
+    return () => {
+      eventSource.close();
+    };
+  },
 };
 
 // Upload endpoint
